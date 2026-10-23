@@ -709,8 +709,9 @@ def parse_results_and_continue(m: Macro, record: Optional[RunRecord] = None) -> 
                 m.click_fixed(1600, 1290)
     else:
         m.log("clicking Return To Lobby to guarantee Dead Ahead map override", "bold")
-        # Defeat screen button is at (1095, 1105); Victory screen Return To Lobby is at (530, 1290)
-        btn_xy = (1095, 1105) if outcome == "defeat" else (530, 1290)
+        # In TDS v2.16, Return To Lobby button is at (1095, 1105) for both Victory and Defeat
+        rtl = find_line(lines, "return to lobby", fuzzy=0.75)
+        btn_xy = rtl.box.center if rtl is not None else (1095, 1105)
         m.click_fixed(*btn_xy)
         time.sleep(1.0)
         for _ in range(4):
