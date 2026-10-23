@@ -640,20 +640,53 @@ def override_dead_ahead(m: Macro) -> None:
     time.sleep(0.6)
     det = m.detect()
     if det.state == State.OVERRIDE:
-        m.log("closing Override Map modal by clicking off-menu (500, 700)", "cyan")
-        m.click_fixed(500, 700)
+        m.log("closing Override Map modal by clicking off-menu (600, 500)", "cyan")
+        m.click_fixed(600, 500)
         time.sleep(0.5)
         if m.detect().state == State.OVERRIDE:
-            close_modal(m)
+            m.click_fixed(600, 700)
             time.sleep(0.5)
 
     # Ensure Roblox ESC menu is not open
     frame = m.grab()
-    esc_lines = m.ocr.recognize(frame, (800, 1000, 960, 300))
-    if any(k in l.norm for l in esc_lines for k in ("resume", "respawn", "leave")):
+    if is_esc_menu_open(m, frame):
         m.log("Roblox ESC menu was open; pressing ESC to close it", "yellow")
         inp.press("escape")
         time.sleep(0.4)
+
+
+def is_vote_timer_running(m: Macro, frame: np.ndarray) -> bool:
+    """Check whether the intermission map voting countdown has started.
+
+    Before voting, TDS displays a bright red banner in the top center:
+    'Vote for a map to start the timer!'. When a vote is cast, this banner vanishes
+    and the countdown timer runs ('Time Left: 00:15').
+    """
+    h, w = frame.shape[:2]
+    y1, y2 = int(h * 0.05), int(h * 0.16)
+    x1, x2 = int(w * 0.35), int(w * 0.65)
+    crop = frame[y1:y2, x1:x2]
+    r = crop[:, :, 2].astype(int)
+    g = crop[:, :, 1].astype(int)
+    b = crop[:, :, 0].astype(int)
+    red_cnt = int(np.sum((r > 180) & (g < 60) & (b < 60)))
+
+    lines = m.ocr.recognize(frame, (x1, y1, x2 - x1, y2 - y1))
+    text = " ".join(l.norm for l in lines)
+    has_start_prompt = "start the timer" in text or "vote for a map to start" in text
+
+    # Timer is running if bright red pixels are gone (< 800) AND 'start the timer' prompt is absent
+    timer_running = (red_cnt < 800) and not has_start_prompt
+    return timer_running
+
+
+def is_esc_menu_open(m: Macro, frame: np.ndarray) -> bool:
+    """Check whether the Roblox in-game Escape menu is open."""
+    h, w = frame.shape[:2]
+    reg = (int(w * 0.30), int(h * 0.65), int(w * 0.40), int(h * 0.20))
+    lines = m.ocr.recognize(frame, reg)
+    text = " ".join(l.norm for l in lines)
+    return any(k in text for k in ("respawn", "resume", "leave"))
 
 
 def walk_from_override_to_map_selector(m: Macro) -> None:
@@ -662,23 +695,23 @@ def walk_from_override_to_map_selector(m: Macro) -> None:
     for _ in range(2):
         det = m.detect()
         if det.state in (State.OVERRIDE, State.MODIFIERS):
-            close_modal(m)
+            m.click_fixed(600, 500)
             time.sleep(0.3)
     frame = m.grab()
-    esc_lines = m.ocr.recognize(frame, (800, 1000, 960, 300))
-    if any(k in l.norm for l in esc_lines for k in ("resume", "respawn", "leave")):
+    if is_esc_menu_open(m, frame):
+        m.log("Roblox ESC menu was open; pressing ESC to close it", "yellow")
         inp.press("escape")
         time.sleep(0.4)
 
     m.log("walking from Override machine to Map Selector Board 1 (Dead Ahead pad)", "bold")
     # Step back from override terminal away from front pads
-    m.hold(["s"], 0.8)
+    m.hold(["s"], 0.7)
     time.sleep(0.12)
-    # Walk left across the open floor directly to Board 1 column
-    m.hold(["a"], 2.2)
+    # Walk left across the open floor directly to Board 1 column (all the way to left wall)
+    m.hold(["a"], 3.5)
     time.sleep(0.12)
-    # Step forward onto Board 1 pad
-    m.hold(["w"], 1.7)
+    # Step forward onto Board 1 glowing white pad
+    m.hold(["w"], 2.4)
     time.sleep(0.3)
     m.snap("at_map_selector")
 
@@ -691,43 +724,49 @@ def walk_from_override_to_map_selector(m: Macro) -> None:
 
     # Closed-loop vision/OCR alignment and vote casting on Board 1
     voted = False
-    for attempt in range(4):
+    for attempt in range(6):
         frame = m.grab()
-        lines = m.ocr.recognize(frame, (80, 140, 2400, 860))
-        da = find_line(lines, "dead ahead", fuzzy=0.72)
-        if da is not None:
-            cx, cy = da.box.center
-            m.log(f"saw Dead Ahead on Map Selector Board at ({cx},{cy})", "cyan")
-            if cx < 850:
-                m.hold(["a"], 0.3)
-            elif cx > 1150:
-                m.hold(["d"], 0.3)
-            m.hold(["w"], 0.4)
-            time.sleep(0.2)
-
-        # Cast the vote on Board 1 by holding E
-        m.log(f"casting vote on Board 1 Dead Ahead pad (holding E) [attempt {attempt+1}/4]", "bold green")
-        m.hold(["e"], 1.4)
-        time.sleep(0.5)
-
-        # Check if the timer started or vote registered
-        post_f = m.grab()
-        post_lines = m.ocr.recognize(post_f, (600, 80, 1360, 260))
-        post_t = " ".join(l.norm for l in post_lines)
-        if "time left" in post_t:
+        if is_vote_timer_running(m, frame):
             m.log("Dead Ahead map vote verified (countdown running)!", "bold green")
-            m.snap("dead_ahead_voted")
+            m.snap("dead_ahead_voted", frame)
             voted = True
             break
 
-        m.log("vote timer not started yet; stepping forward onto pad and retrying E", "yellow")
-        m.hold(["w"], 0.35)
-        time.sleep(0.2)
+        m.log(f"vote not registered yet [attempt {attempt+1}/6]; aligning and stepping onto Board 1 pad", "yellow")
+        lines = m.ocr.recognize(frame, (0, int(frame.shape[0] * 0.15), int(frame.shape[1] * 0.8), int(frame.shape[0] * 0.45)))
+        da = find_line(lines, "dead ahead", fuzzy=0.72)
+        if da is not None:
+            cx = da.box.center[0]
+            m.log(f"saw Dead Ahead on Map Selector Board at cx={cx}", "cyan")
+            if cx < 1000:
+                m.hold(["a"], 0.4)
+            elif cx > 1500:
+                m.hold(["d"], 0.3)
+        else:
+            m.hold(["a"], 0.4)
+
+        # Step forward onto pad
+        m.hold(["w"], 0.45)
+        time.sleep(0.15)
+
+        # Cast the vote on Board 1 by holding E
+        m.log("holding E on Board 1 Dead Ahead pad", "cyan")
+        m.hold(["e"], 1.3)
+        time.sleep(0.4)
 
     if not voted:
-        m.log("final attempt: holding E on Board 1 pad", "yellow")
+        m.log("final attempt: pushing forward and holding E on Board 1 pad", "yellow")
+        m.hold(["w"], 0.7)
         m.hold(["e"], 1.5)
-        time.sleep(0.4)
+        time.sleep(0.5)
+        final_frame = m.grab()
+        if is_vote_timer_running(m, final_frame):
+            m.log("Dead Ahead vote confirmed on final attempt!", "bold green")
+            m.snap("dead_ahead_voted", final_frame)
+            voted = True
+        else:
+            m.log("CRITICAL: Failed to register vote on Dead Ahead pad! Refusing to ready up.", "bold red")
+            raise MacroError("Failed to register vote on Dead Ahead pad; aborting to avoid random map")
 
 
 def get_ready_region(frame: np.ndarray) -> tuple[int, int, int, int]:
@@ -738,6 +777,12 @@ def get_ready_region(frame: np.ndarray) -> tuple[int, int, int, int]:
 
 def ready_up(m: Macro) -> bool:
     """Click Ready at the bottom of the screen with a verification loop to guarantee it registers."""
+    frame0 = m.grab()
+    det0 = m.detector.detect(frame0)
+    if det0.state == State.INTERMISSION and not is_vote_timer_running(m, frame0):
+        m.log("CRITICAL: Vote timer is not running! Refusing to click Ready without a map vote.", "bold red")
+        return False
+
     m.log("clicking Ready at bottom of screen with verification loop", "bold")
 
     for attempt in range(6):
