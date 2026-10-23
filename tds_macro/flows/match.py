@@ -395,8 +395,7 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
         m.check_interrupts()
         cash = m.read_cash()
         if cash is not None and cash >= 250:
-            ok, is_max = _upgrade_scout_at(m, scouts[0], presses=1)
-            if ok:
+            if _upgrade_scout_at(m, scouts[0], presses=1):
                 scouts[0]["level"] = 2
                 m.log("upgraded Scout #1 to Level 2", "green")
                 break
@@ -448,9 +447,15 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
         # Wave skipping policy:
         now = time.time()
         should_skip = False
-        if wave is not None and wave <= 5:
-            should_skip = True
-        elif wave is not None and wave >= 6 and now - last_skip_time > 8.0:
+        if wave is not None:
+            if wave <= 5:
+                should_skip = True
+            elif 6 <= wave <= 8 and len(scouts) >= 6 and now - last_skip_time > 12.0:
+                should_skip = True
+            elif 11 <= wave <= 18 and any(s.get("maxed", False) for s in scouts) and now - last_skip_time > 10.0:
+                should_skip = True
+            # Never skip Wave 9-10 (first boss) or Wave 19-20 (final boss) to guarantee 100% win rate
+        elif now - last_skip_time > 15.0:
             should_skip = True
 
         if should_skip:
@@ -653,11 +658,17 @@ def parse_results_and_continue(m: Macro, record: Optional[RunRecord] = None) -> 
                 m.click_fixed(1600, 1290)
     else:
         m.log("clicking Return To Lobby to guarantee Dead Ahead map override", "bold")
-        if not m.click_text("return to lobby", region=(200, 850, 1800, 550), timeout=5.0, fuzzy=0.75):
-            # Click calibrated coordinates: defeat button is at (1095, 1080), victory is at (530, 1290)
-            m.click_fixed(1095, 1080)
-            time.sleep(1.0)
-            m.click_fixed(530, 1290)
+        # Defeat screen button is at (1095, 1105); Victory screen Return To Lobby is at (530, 1290)
+        btn_xy = (1095, 1105) if outcome == "defeat" else (530, 1290)
+        m.click_fixed(*btn_xy)
+        time.sleep(1.0)
+        for _ in range(4):
+            post_det = m.detect()
+            if post_det.state not in (State.VICTORY, State.DEFEAT):
+                break
+            m.log(f"still on {post_det.state.value} screen; retrying Return To Lobby click", "yellow")
+            m.click_fixed(*btn_xy)
+            time.sleep(1.2)
 
     time.sleep(2.0)
     return {
