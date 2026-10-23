@@ -27,6 +27,70 @@ def _ensure_default_desktop() -> None:
         pass
 
 
+def grab_window(hwnd: int) -> Optional[np.ndarray]:
+    """Capture ONLY the target window surface via Win32 PrintWindow (PW_RENDERFULLCONTENT).
+    Completely immune to other applications, popups, or overlays covering or obscuring the game."""
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+        user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
+
+        rect = wt.RECT()
+        if not user32.GetClientRect(hwnd, ctypes.byref(rect)):
+            return None
+        w, h = rect.right - rect.left, rect.bottom - rect.top
+        if w <= 0 or h <= 0:
+            return None
+
+        hdc = user32.GetDC(hwnd)
+        if not hdc:
+            return None
+        mdc = gdi32.CreateCompatibleDC(hdc)
+        hbm = gdi32.CreateCompatibleBitmap(hdc, w, h)
+        old_bm = gdi32.SelectObject(mdc, hbm)
+
+        # PW_RENDERFULLCONTENT = 2 grabs the window composition surface directly from DWM
+        res = user32.PrintWindow(hwnd, mdc, 2)
+
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [
+                ("biSize", wt.DWORD),
+                ("biWidth", wt.LONG),
+                ("biHeight", wt.LONG),
+                ("biPlanes", wt.WORD),
+                ("biBitCount", wt.WORD),
+                ("biCompression", wt.DWORD),
+                ("biSizeImage", wt.DWORD),
+                ("biXPelsPerMeter", wt.LONG),
+                ("biYPelsPerMeter", wt.LONG),
+                ("biClrUsed", wt.DWORD),
+                ("biClrImportant", wt.DWORD),
+            ]
+
+        bmi = BITMAPINFOHEADER()
+        bmi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bmi.biWidth = w
+        bmi.biHeight = -h  # top-down DIB
+        bmi.biPlanes = 1
+        bmi.biBitCount = 32
+        bmi.biCompression = 0
+
+        buf = np.zeros((h, w, 4), dtype=np.uint8)
+        gdi32.GetDIBits(mdc, hbm, 0, h, buf.ctypes.data_as(ctypes.c_void_p), ctypes.byref(bmi), 0)
+
+        gdi32.SelectObject(mdc, old_bm)
+        gdi32.DeleteObject(hbm)
+        gdi32.DeleteDC(mdc)
+        user32.ReleaseDC(hwnd, hdc)
+
+        if res and buf[:, :, :3].mean() > 5.0:
+            return cv2.cvtColor(buf, cv2.COLOR_BGRA2BGR)
+    except Exception:
+        pass
+    return None
+
+
 class Capture:
     def __init__(self, output_idx: int = 0):
         _ensure_default_desktop()
@@ -35,6 +99,7 @@ class Capture:
 
         self._dxcam = dxcam
         self.output_idx = output_idx
+        self.target_hwnd: Optional[int] = None
         self.camera = _SHARED_CAMERAS.get(output_idx)
         if self.camera is None:
             self._create()
@@ -56,10 +121,31 @@ class Capture:
             raise RuntimeError("dxcam could not create a capture device")
         _SHARED_CAMERAS[self.output_idx] = self.camera
 
-    def grab(self, retries: int = 8) -> np.ndarray:
-        """Return the current screen as a BGR uint8 array (H, W, 3)."""
+    def grab(self, retries: int = 8, hwnd: Optional[int] = None) -> np.ndarray:
+        """Return the current frame as a BGR uint8 array (H, W, 3).
+        Prioritizes capturing ONLY the Roblox window client area directly to prevent interference."""
         _ensure_default_desktop()
         ensure_dpi_aware()
+
+        # 1. Window-isolated capture: captures ONLY Roblox, ignoring background/covering apps
+        target_hwnd = hwnd or self.target_hwnd
+        if target_hwnd is None:
+            try:
+                from .window import find_window
+                info = find_window()
+                if info is not None:
+                    target_hwnd = info.hwnd
+                    self.target_hwnd = target_hwnd
+            except Exception:
+                pass
+
+        if target_hwnd:
+            win_frame = grab_window(target_hwnd)
+            if win_frame is not None:
+                _LAST_FRAMES[self.output_idx] = win_frame
+                return win_frame
+
+        # 2. Desktop fallback via DXGI Desktop Duplication
         for _ in range(retries):
             try:
                 frame = self.camera.grab()

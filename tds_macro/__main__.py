@@ -184,7 +184,7 @@ def cmd_run(args) -> int:
     from .flows import runloop
     from .watchdog import HotkeyWatchdog
 
-    settings = RunSettings()
+    settings = RunSettings().load_persisted()
     if args.runs:
         settings.max_runs = args.runs
     m = _new_macro(settings)

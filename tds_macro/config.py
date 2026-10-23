@@ -97,3 +97,19 @@ class RunSettings:
     log_dir: Path = field(default_factory=lambda: LOGS)
     save_debug_frames: bool = True
     debug_every_step: bool = False
+
+    def load_persisted(self) -> RunSettings:
+        """Load user-configured settings from logs/ui_settings.json if present."""
+        import json
+        settings_file = LOGS / "ui_settings.json"
+        if settings_file.is_file():
+            try:
+                data = json.loads(settings_file.read_text(encoding="utf-8"))
+                for k, v in data.items():
+                    if hasattr(self, k):
+                        if k == "modifiers" and isinstance(v, (list, tuple)):
+                            v = tuple(v)
+                        setattr(self, k, v)
+            except Exception:
+                pass
+        return self
