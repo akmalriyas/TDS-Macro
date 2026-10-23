@@ -132,8 +132,16 @@ class StateDetector:
         if _has(lines, "coins") and _has(lines, "gems") and _has(lines, "play"):
             return Detection(State.LOBBY, lines, 1.0, "main lobby")
 
+        # Roblox home / desktop app page.
+        if (
+            (_has(lines, "home") and (_has(lines, "moments") or _has(lines, "add friends") or _has(lines, "charts")))
+            or (_has(lines, "recommended for you") or (_has(lines, "continue") and _has(lines, "home")))
+            or (any(l.text.strip().upper() == "ROBLOX" for l in lines) and _has(lines, "home"))
+        ):
+            return Detection(State.ROBLOX_HOME, lines, 0.95, "roblox home")
+
         # In-match HUD (v2.15.0 shows Wave N, Ready? / Skip Wave?, $600, Quick Place, etc.).
-        if _has(lines, "ready?") or (_has(lines, "ready") and _has(lines, "wave") and not _has(lines, "veto")):
+        if (_has(lines, "ready?") and _has(lines, "required")) or (_has(lines, "ready") and _has(lines, "wave") and _has(lines, "base health") and not _has(lines, "veto")):
             return Detection(State.GAMEPLAY_PREP, lines, 1.0, "prep")
         if _has(lines, "skip wave") or _has(lines, "quick place") or _has(lines, "sell ("):
             return Detection(State.GAMEPLAY, lines, 1.0, "in match")
@@ -143,10 +151,6 @@ class StateDetector:
             return Detection(State.GAMEPLAY, lines, 0.9, "in match")
         if _has(lines, "wave") and (any("$" in l.text for l in lines) or _has(lines, "cash")):
             return Detection(State.GAMEPLAY, lines, 0.9, "in match")
-
-        # Roblox home / game page.
-        if _has(lines, "recommended for you") or _has(lines, "continue") and _has(lines, "home"):
-            return Detection(State.ROBLOX_HOME, lines, 0.9, "roblox home")
 
         # Loading screen. Roblox's loading UI is mostly black with a small logo.
         mean = float(frame.mean())

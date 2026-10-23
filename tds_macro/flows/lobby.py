@@ -636,9 +636,8 @@ def override_dead_ahead(m: Macro) -> None:
     except MacroError:
         m.log("proceeding after Dead Ahead tile selection", "dim")
 
-    # 4. Close the Override Map modal: press ESC and/or click off-menu (500, 700)
-    inp.press("escape")
-    time.sleep(0.4)
+    # 4. Close the Override Map modal if still open (do NOT press ESC unconditionally)
+    time.sleep(0.6)
     det = m.detect()
     if det.state == State.OVERRIDE:
         m.log("closing Override Map modal by clicking off-menu (500, 700)", "cyan")
@@ -648,9 +647,29 @@ def override_dead_ahead(m: Macro) -> None:
             close_modal(m)
             time.sleep(0.5)
 
+    # Ensure Roblox ESC menu is not open
+    frame = m.grab()
+    esc_lines = m.ocr.recognize(frame, (800, 1000, 960, 300))
+    if any(k in l.norm for l in esc_lines for k in ("resume", "respawn", "leave")):
+        m.log("Roblox ESC menu was open; pressing ESC to close it", "yellow")
+        inp.press("escape")
+        time.sleep(0.4)
+
 
 def walk_from_override_to_map_selector(m: Macro) -> None:
     """Walk from the Override computer toward Board 1 (Dead Ahead pad) and register the vote."""
+    # Ensure any open modals or menus are closed before moving
+    for _ in range(2):
+        det = m.detect()
+        if det.state in (State.OVERRIDE, State.MODIFIERS):
+            close_modal(m)
+            time.sleep(0.3)
+    frame = m.grab()
+    esc_lines = m.ocr.recognize(frame, (800, 1000, 960, 300))
+    if any(k in l.norm for l in esc_lines for k in ("resume", "respawn", "leave")):
+        inp.press("escape")
+        time.sleep(0.4)
+
     m.log("walking from Override machine to Map Selector Board 1 (Dead Ahead pad)", "bold")
     # Step back from override terminal away from front pads
     m.hold(["s"], 0.8)
