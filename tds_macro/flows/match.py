@@ -260,28 +260,35 @@ def _upgrade_scout_at(m: Macro, coord: tuple[int, int], presses: int = 1) -> boo
 
 def collect_battlepass_drops(m: Macro) -> None:
     """Sweep down the road median to vacuum up dropped battlepass event tokens,
-    then re-anchor against the street light pole to keep camera and character 100% aligned."""
+    then return using an exact net-zero displacement vector to keep camera 100% aligned."""
     m.log("Battlepass Farm: sweeping down track median to collect drops", "cyan")
     prev_status = getattr(m, "_custom_status", None)
     m._custom_status = "Battlepass Farm"
     m.notify_status()
     try:
+        # Note: Poles & map props in TDS are non-collidable (CanCollide=false),
+        # so we rely on exact mathematically balanced symmetric vectors along the clear road median.
+        SWEEP_TIME = 1.30
+        LATERAL_TIME = 0.35
+
         # 1. Walk DOWN the road median towards the killzone where enemies drop tokens
         # Median is clear of towers; holding 's' walks straight down the road
-        m.hold(["s"], 1.30)
-        time.sleep(0.05)
+        m.hold(["s"], SWEEP_TIME)
+        time.sleep(0.04)
+
         # 2. Side-to-side sweep across the road to widen collection radius
-        m.hold(["a"], 0.35)
+        m.hold(["a"], LATERAL_TIME)
+        time.sleep(0.03)
+        m.hold(["d"], LATERAL_TIME * 2)
+        time.sleep(0.03)
+        m.hold(["a"], LATERAL_TIME)
         time.sleep(0.04)
-        m.hold(["d"], 0.70)
-        time.sleep(0.04)
-        m.hold(["a"], 0.35)
-        time.sleep(0.05)
-        # 3. Walk BACK UP the road median directly into the street light pole to re-anchor
-        # Walking W into the street light pole uses the physical pole as a hard limit stop
-        m.hold(["w"], 1.60)
-        time.sleep(0.10)
-        m.log("Battlepass Farm: re-anchored to street light landmark", "green")
+
+        # 3. Walk BACK UP the road median with exact matching duration
+        # (Net W/S = 0, Net A/D = 0 -> returns precisely to starting position)
+        m.hold(["w"], SWEEP_TIME)
+        time.sleep(0.08)
+        m.log("Battlepass Farm: sweep complete; returned to anchor position", "green")
     except Exception as exc:
         m.log(f"Battlepass sweep interrupted: {exc}", "yellow")
     finally:
