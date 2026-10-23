@@ -399,6 +399,14 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
     elif "base health" in health_text and "100" not in health_text:
         is_wrong_map = True
 
+    # Visual check: Dead Ahead is a dark night/asphalt map. If bright gold/blue colors dominate (Retro Temple, Iceville), abort!
+    b_chan, g_chan, r_chan = frame[:, :, 0], frame[:, :, 1], frame[:, :, 2]
+    retro_gold = int(np.sum((r_chan > 160) & (g_chan > 140) & (b_chan < 80)))
+    retro_blue = int(np.sum((b_chan > 160) & (g_chan < 140) & (r_chan < 80)))
+    if retro_gold > 50000 or retro_blue > 50000:
+        is_wrong_map = True
+        health_text += f" (visual mismatch: gold={retro_gold}, blue={retro_blue})"
+
     if is_wrong_map:
         m.log(f"WRONG MAP DETECTED ({health_text})! Leaving match via Roblox menu to return to Dead Ahead", "bold red")
         inp.press("escape")
