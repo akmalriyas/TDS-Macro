@@ -32,13 +32,40 @@ READY_REGION = (1050, 1180, 850, 180)
 
 
 def dismiss_popups(m: Macro, max_rounds: int = 5) -> bool:
-    """Close daily rewards / battle-pass overlays that cover the lobby."""
+    """Close daily rewards / battle-pass / login rewards overlays that cover the lobby."""
     dismissed = False
     for _ in range(max_rounds):
         frame = m.grab()
         lines = m.ocr.recognize(frame)
         text = " ".join(l.norm for l in lines)
 
+        # 1. Login Rewards / Daily Rewards popup with a 'CLOSE' button
+        if any(k in text for k in ("login rewards", "login streak", "daily rewards", "streak", "day streak", "rewards scale")):
+            close_btn = find_line(lines, "close", exact=True) or find_line(lines, "close", fuzzy=0.75)
+            if close_btn is not None:
+                m.log(f"closing Login Rewards popup via CLOSE button at {close_btn.box.center}", "cyan")
+                inp.click_box(close_btn.box.tuple)
+                time.sleep(1.0)
+                dismissed = True
+                continue
+            # Fallback: click bottom-center of modal where CLOSE button sits
+            h, w = frame.shape[:2]
+            m.log("clicking calibrated Login Rewards CLOSE button at center-bottom", "yellow")
+            inp.click(int(w * 0.50), int(h * 0.77))
+            time.sleep(1.0)
+            dismissed = True
+            continue
+
+        # 2. Any overlay with an explicit CLOSE button
+        close_btn = find_line(lines, "close", exact=True)
+        if close_btn is not None and close_btn.box.y > 400:
+            m.log(f"closing overlay via CLOSE button at {close_btn.box.center}", "cyan")
+            inp.click_box(close_btn.box.tuple)
+            time.sleep(1.0)
+            dismissed = True
+            continue
+
+        # 3. Free rewards / Reward info popups with red X
         if "free rewards" in text or "reward info" in text or "earn rewards for playing" in text:
             title = find_line(lines, "free rewards") or find_line(lines, "reward info")
             reds = vision.find_red_buttons(frame, None, min_area=250, max_boxes=40)
@@ -67,8 +94,6 @@ def dismiss_popups(m: Macro, max_rounds: int = 5) -> bool:
                 continue
             m.log("rewards popup found but no close button", "yellow")
 
-        # The Solar Requiem banner at the top is harmless; do not click the
-        # top-right Claim button, because it reopens the rewards popup.
         break
     return dismissed
 
@@ -271,21 +296,29 @@ def check_scout(m: Macro, force: bool = False) -> dict:
     return status
 
 
-def open_play_menu(m: Macro) -> None:
+def open_play_menu(m: Macro, timeout: float = 30.0) -> None:
     m.log("opening Play menu", "bold")
-    if not m.click_green(PLAY_BUTTON_REGION, min_area=800):
-        # Fall back to OCR "PLAY" at the bottom
-        if not m.click_text("play", region=(900, 1180, 800, 260), timeout=2.0):
-            # Fall back to calibrated screen-center PLAY button coordinates
-            frame = m.grab()
-            h, w = frame.shape[:2]
-            play_xy = (int(w * 0.50), int(h * 0.885))
-            m.log(f"falling back to calibrated PLAY button click at {play_xy}", "yellow")
-            inp.click(*play_xy)
-    time.sleep(1.4)
-    det = m.wait_for_state([State.PLAY_MENU, State.SQUAD_SELECT], timeout=15.0)
-    if det.state == State.SQUAD_SELECT:
-        m.log("already on squad select", "yellow")
+    m.focus()
+    time.sleep(0.3)
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        det = m.detect()
+        if det.state in (State.PLAY_MENU, State.SQUAD_SELECT):
+            m.log("Play menu opened", "green")
+            return
+
+        # Make sure no modal or popup is covering the screen
+        dismiss_popups(m, max_rounds=2)
+
+        # Click the green PLAY button (center ~ 1280, 1275)
+        if not m.click_text("play", region=(1100, 1220, 360, 120), timeout=1.0):
+            if not m.click_green(PLAY_BUTTON_REGION, min_area=800):
+                inp.click(1280, 1275, hold=0.06, settle=0.10)
+
+        time.sleep(1.5)
+
+    raise MacroError("timed out waiting for play_menu")
 
 
 def _back_to_play_menu(m: Macro) -> None:
