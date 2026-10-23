@@ -34,10 +34,6 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller pillow
 
-      - name: Generate Icon
-        run: |
-          python -c "from PIL import Image; img = Image.open('tds_macro/assets/app_icon.png'); img.save('tds_macro/assets/app_icon.ico', format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])"
-
       - name: Build with PyInstaller
         run: |
           pyinstaller --noconfirm --clean flare.spec
@@ -47,9 +43,19 @@ jobs:
           Compress-Archive -Path dist/FlareMacro/* -DestinationPath dist/FlareMacro-Portable.zip
 
       - name: Install Inno Setup
-        uses: chinstrap/action-inno-setup@v1
-        with:
-          filepath: installer.iss
+        run: choco install innosetup --no-progress
+
+      - name: Build Inno Setup Installer
+        run: |
+          if (Get-Command iscc -ErrorAction SilentlyContinue) {
+            iscc installer.iss
+          } elseif (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe") {
+            & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          } elseif (Test-Path "C:\Program Files\Inno Setup 6\ISCC.exe") {
+            & "C:\Program Files\Inno Setup 6\ISCC.exe" installer.iss
+          } else {
+            throw "ISCC compiler not found"
+          }
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

@@ -8,7 +8,6 @@ block_cipher = None
 # Collect all winrt, pynput, and tds_macro submodules
 hidden_imports = []
 hidden_imports += collect_submodules('winrt')
-hidden_imports += collect_submodules('pynput')
 hidden_imports += collect_submodules('tds_macro')
 hidden_imports += [
     'winocr',
