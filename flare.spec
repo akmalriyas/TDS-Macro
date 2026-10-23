@@ -1,40 +1,41 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
 
-# Collect all winrt, pynput, and tds_macro submodules
-hidden_imports = []
-hidden_imports += collect_submodules('winrt')
-hidden_imports += collect_submodules('tds_macro')
-hidden_imports += [
+extra_binaries = []
+extra_datas = [
+    ('tds_macro/ui/web', 'tds_macro/ui/web'),
+    ('tds_macro/assets', 'tds_macro/assets'),
+]
+extra_hiddenimports = [
+    'clr',
     'winocr',
     'webview.platforms.edgechromium',
-    'clr_loader',
-    'pythonnet',
     'win32gui',
     'win32con',
     'win32process',
     'win32api',
 ]
 
-# Assets & Web UI data files
-added_files = [
-    ('tds_macro/ui/web', 'tds_macro/ui/web'),
-    ('tds_macro/assets', 'tds_macro/assets'),
-]
+extra_hiddenimports += collect_submodules('winrt')
+extra_hiddenimports += collect_submodules('tds_macro')
 
-# Add webview hook data
-added_files += collect_data_files('webview')
+# Collect all binaries, datas, and hidden imports for pythonnet, clr_loader, and webview
+for pkg in ['pythonnet', 'clr_loader', 'webview']:
+    d, b, h = collect_all(pkg)
+    extra_datas.extend(d)
+    extra_binaries.extend(b)
+    extra_hiddenimports.extend(h)
 
 a = Analysis(
     ['run_flare.py'],
     pathex=['.'],
-    binaries=[],
-    datas=added_files,
-    hiddenimports=hidden_imports,
+    binaries=extra_binaries,
+    datas=extra_datas,
+    hiddenimports=extra_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
