@@ -168,6 +168,19 @@ def launch(wait_s: float = 90.0) -> Optional[WindowInfo]:
     info = find_window()
     if info is not None:
         return focus_window(info)
+
+    # Clean up any zombie or crashed Roblox processes to free the single-instance lock
+    try:
+        import subprocess
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "RobloxCrashHandler.exe", "/IM", "RobloxPlayerBeta.exe"],
+            capture_output=True,
+            timeout=5,
+        )
+        time.sleep(1.0)
+    except Exception:
+        pass
+
     open_url(GAME_URL)
     deadline = time.time() + wait_s
     while time.time() < deadline:
