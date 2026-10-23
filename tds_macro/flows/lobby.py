@@ -658,18 +658,15 @@ def override_dead_ahead(m: Macro) -> None:
 def walk_from_override_to_map_selector(m: Macro) -> None:
     """Walk from the Override computer toward Board 1 (Dead Ahead pad) and register the vote."""
     m.log("walking from Override machine to Map Selector Board 1 (Dead Ahead pad)", "bold")
-    # Walk left along the boards toward Board 1
-    m.hold(["a"], 1.6)
-    time.sleep(0.1)
-    m.hold(["w"], 0.8)
-    time.sleep(0.1)
-    m.hold(["a"], 0.4)
-    time.sleep(0.15)
-    # Step forward onto Board 1 pad and hold E to vote
-    m.hold(["w"], 0.6)
-    time.sleep(0.2)
-    m.hold(["e"], 1.2)
-    time.sleep(0.4)
+    # Step back from override terminal away from front pads
+    m.hold(["s"], 0.8)
+    time.sleep(0.12)
+    # Walk left across the open floor directly to Board 1 column
+    m.hold(["a"], 2.4)
+    time.sleep(0.12)
+    # Step forward onto Board 1 pad
+    m.hold(["w"], 1.3)
+    time.sleep(0.3)
     m.snap("at_map_selector")
 
     # If inventory or another modal accidentally opened near the kiosk, close it immediately
@@ -679,34 +676,25 @@ def walk_from_override_to_map_selector(m: Macro) -> None:
         close_modal(m)
         time.sleep(0.5)
 
-    # Closed-loop vision/OCR alignment: ensure we are centered in front of "Dead Ahead"
-    sweep_steps: list[tuple[list[str], float]] = [
-        (["w"], 0.40),
-        (["a", "w"], 0.30),
-        (["d", "w"], 0.30),
-        (["w"], 0.35),
-    ]
-    for keys, dur in sweep_steps:
+    # Closed-loop vision/OCR alignment: ensure we are centered on "Dead Ahead"
+    for _ in range(3):
         frame = m.grab()
         lines = m.ocr.recognize(frame, (80, 140, 2400, 860))
         da = find_line(lines, "dead ahead", fuzzy=0.72)
         if da is not None:
             cx, cy = da.box.center
             m.log(f"saw Dead Ahead on Map Selector Board at ({cx},{cy})", "cyan")
-            if cx < 800:
-                m.hold(["a"], 0.25)
-            elif cx > 1400:
-                m.hold(["d"], 0.25)
-            m.hold(["w"], 0.40)
-            m.hold(["e"], 1.2)
+            if cx < 1000:
+                m.hold(["a"], 0.35)
+            elif cx > 1450:
+                m.hold(["d"], 0.35)
+            m.hold(["w"], 0.45)
             time.sleep(0.3)
             m.log("Dead Ahead vote confirmed on Board 1!", "green")
             m.snap("dead_ahead_voted")
             return
-        else:
-            m.hold(keys, dur)
-            m.hold(["e"], 0.9)
-        time.sleep(0.3)
+        m.hold(["w"], 0.3)
+        time.sleep(0.2)
 
     m.log("finished map selector walk; proceeding to Ready", "yellow")
 
