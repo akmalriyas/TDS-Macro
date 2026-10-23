@@ -166,8 +166,9 @@ def setup_camera_and_position(m: Macro) -> list[tuple[int, int]]:
     return get_scout_slots(frame)
 
 
-def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> tuple[int, int]:
-    """Select Scout ('1') and place at slot_xy using real-time ring color sensing."""
+def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, int]]:
+    """Select Scout ('1') and place at slot_xy using real-time ring color sensing.
+    Strictly verifies cash consumption or tower count increment before confirming success."""
     sx, sy = slot_xy
     search_offsets = [
         (0, 0),
@@ -180,10 +181,12 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> tuple[int, int]:
         (-35, 25),
         (35, -25),
         (35, 25),
+        (-70, 0),
+        (70, 0),
     ]
 
     m.press("1")
-    time.sleep(0.06)
+    time.sleep(0.08)
 
     for ox, oy in search_offsets:
         tx, ty = sx + ox, sy + oy
@@ -192,82 +195,114 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> tuple[int, int]:
         frame = m.grab()
         if is_valid_placement_spot(frame, tx, ty):
             cash_before = m.read_cash(frame)
-            inp.click(tx, ty)
-            time.sleep(0.20)
-            cash_after = m.read_cash()
-            if cash_before is not None and cash_after is not None and cash_after < cash_before:
-                m.log(f"Scout placed at ({tx}, {ty}) [cash: ${cash_before} -> ${cash_after}]", "green")
-                m.press("q")
-                return (tx, ty)
-            m.press("q")
-            return (tx, ty)
+            t_before, _ = m.read_tower_count(frame)
 
-    # Fallback click at base spot
-    inp.click(sx, sy)
-    time.sleep(0.15)
+            inp.click(tx, ty)
+            time.sleep(0.24)
+
+            frame_after = m.grab()
+            cash_after = m.read_cash(frame_after)
+            t_after, _ = m.read_tower_count(frame_after)
+
+            # Verification: Cash must decrease by at least $180, or tower count must increment
+            placed = False
+            if cash_before is not None and cash_after is not None and cash_after <= cash_before - 180:
+                placed = True
+            elif t_before is not None and t_after is not None and t_after > t_before:
+                placed = True
+
+            if placed:
+                m.log(f"VERIFIED: Scout placed at ({tx}, {ty}) [Cash: ${cash_before}->${cash_after}]", "green")
+                m.press("q")
+                time.sleep(0.06)
+                return (tx, ty)
+            else:
+                m.log(f"Placement click at ({tx}, {ty}) not confirmed by server; trying next offset", "dim")
+
+    # If all offsets failed, deselect placement mode with 'q'
     m.press("q")
-    return (sx, sy)
+    time.sleep(0.06)
+    return None
 
 
 def _upgrade_scout_at(m: Macro, coord: tuple[int, int], presses: int = 1) -> bool:
     """Click a placed Scout to select it and trigger upgrade.
-
-    In TDS v2.15, clicking the tower opens its upgrade/stats panel on the left (x=100..500, y=700..900).
-    We click the tower, click the on-screen Upgrade button at (290, 800) and press 'e',
-    then close the selection with 'q'.
-    Each upgrade step allows adequate server/animation settle time (0.16s).
-    """
+    Validates whether cash was consumed by the server before confirming success."""
     m.touch()
+    cash_before = m.read_cash()
+
     # 1. Click tower to select
     inp.click(coord[0], coord[1], hold=0.04, settle=0.08)
-    time.sleep(0.08)
+    time.sleep(0.12)
 
-    c_before = m.read_cash()
     # 2. Trigger upgrades with adequate settle time between steps
     for _ in range(presses):
         inp.click(290, 800, hold=0.04, settle=0.06)
         m.press("e")
-        time.sleep(0.16)
+        time.sleep(0.18)
 
-    c_after = m.read_cash()
+    time.sleep(0.10)
+    cash_after = m.read_cash()
+
     # 3. Deselect/close panel with 'q'
     m.press("q")
     m.touch()
     time.sleep(0.06)
 
-    if c_before is not None and c_after is not None and c_after < c_before:
+    # Verification: Did cash decrease?
+    if cash_before is not None and cash_after is not None and cash_after < cash_before:
+        m.log(f"VERIFIED: Scout upgrade succeeded at {coord} (${cash_before} -> ${cash_after})", "green")
         return True
-    return True
+
+    m.log(f"Upgrade at {coord} did not change cash (${cash_before} -> ${cash_after})", "dim")
+    return False
 
 
 def collect_battlepass_drops(m: Macro) -> None:
-    """Perform a quick collection sweep forward toward the track/killzone to collect dropped battlepass
-    event tokens (e.g. sickles, crystals, pumpkins), then return immediately to starting position."""
-    m.log("Battlepass Farm: sweeping forward toward track to vacuum dropped tokens", "cyan")
+    """Sweep down the road median to vacuum up dropped battlepass event tokens,
+    then re-anchor against the street light pole to keep camera and character 100% aligned."""
+    m.log("Battlepass Farm: sweeping down track median to collect drops", "cyan")
     prev_status = getattr(m, "_custom_status", None)
     m._custom_status = "Battlepass Farm"
     m.notify_status()
     try:
-        # 1. Walk forward toward the track
-        m.hold(["w"], 1.35)
-        time.sleep(0.08)
-        # 2. Sweep left along the road shoulder
-        m.hold(["a"], 0.60)
+        # 1. Walk DOWN the road median towards the killzone where enemies drop tokens
+        # Median is clear of towers; holding 's' walks straight down the road
+        m.hold(["s"], 1.30)
         time.sleep(0.05)
-        # 3. Sweep across the road to the right shoulder
-        m.hold(["d"], 1.20)
+        # 2. Side-to-side sweep across the road to widen collection radius
+        m.hold(["a"], 0.35)
+        time.sleep(0.04)
+        m.hold(["d"], 0.70)
+        time.sleep(0.04)
+        m.hold(["a"], 0.35)
         time.sleep(0.05)
-        # 4. Re-center
-        m.hold(["a"], 0.60)
-        time.sleep(0.08)
-        # 5. Return backward to baseline position
-        m.hold(["s"], 1.35)
-        time.sleep(0.12)
+        # 3. Walk BACK UP the road median directly into the street light pole to re-anchor
+        # Walking W into the street light pole uses the physical pole as a hard limit stop
+        m.hold(["w"], 1.60)
+        time.sleep(0.10)
+        m.log("Battlepass Farm: re-anchored to street light landmark", "green")
     except Exception as exc:
         m.log(f"Battlepass sweep interrupted: {exc}", "yellow")
     finally:
         m._custom_status = prev_status
         m.notify_status()
+
+
+def _place_next_scout(m: Macro, slots: list[tuple[int, int]], scouts: list[dict], failed_slots: set[int]) -> Optional[tuple[int, int]]:
+    """Iterate through slots, find an unobstructed placement spot, verify with server, and return coordinates."""
+    for idx, slot_xy in enumerate(slots):
+        if idx in failed_slots:
+            continue
+        # Skip if an existing scout is already within 35px
+        if any(abs(s["coord"][0] - slot_xy[0]) < 35 and abs(s["coord"][1] - slot_xy[1]) < 35 for s in scouts):
+            continue
+        coord = _place_scout_at(m, slot_xy)
+        if coord is not None:
+            return coord
+        m.log(f"Slot #{idx} at {slot_xy} obstructed or unverified; skipping to next slot", "yellow")
+        failed_slots.add(idx)
+    return None
 
 
 def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
@@ -293,38 +328,52 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
             return det.state
 
     slots = setup_camera_and_position(m)
+    failed_slots: set[int] = set()
 
     # 1. Opening sequence (Wave 0 Prep):
-    m.log("placing Scout #1 at slot 0 and upgrading to Level 1", "bold")
-    scout_1_coord = _place_scout_at(m, slots[0])
+    m.log("placing Scout #1 and upgrading to Level 1", "bold")
+    scout_1_coord = _place_next_scout(m, slots, [], failed_slots)
+    if scout_1_coord is None:
+        m.log("Failed initial placement; re-anchoring camera against street light", "yellow")
+        setup_camera_and_position(m)
+        scout_1_coord = _place_next_scout(m, slots, [], failed_slots) or slots[0]
+
     _upgrade_scout_at(m, scout_1_coord, presses=1)  # Level 1 ($100)
     scouts: list[dict] = [{"coord": scout_1_coord, "level": 1}]
     m.scouts_placed = 1
     m.notify_status()
 
-    # Click Ready? -> Yes to start Wave 1
+    # Click Ready? -> Yes to start Wave 1 with verification loop
     m.log("clicking Ready at top of screen to start Wave 1", "bold")
-    if not click_top_yes(m):
-        m.click_text("yes", region=get_top_prompt_region(m.grab()), timeout=3.0)
+    for attempt in range(8):
+        m.check_interrupts()
+        if click_top_yes(m):
+            time.sleep(0.4)
+            if not click_top_yes(m):
+                m.log("Wave 1 Ready confirmed (prompt cleared)", "green")
+                break
+        else:
+            m.click_text("yes", region=get_top_prompt_region(m.grab()), timeout=1.0)
+        time.sleep(0.3)
 
     # Wait for $250 to upgrade Scout 1 to Level 2
     m.log("waiting for $250 to upgrade Scout #1 to Level 2", "cyan")
-    w1_deadline = time.time() + 15.0
+    w1_deadline = time.time() + 18.0
     while time.time() < w1_deadline:
         m.check_interrupts()
         cash = m.read_cash()
         if cash is not None and cash >= 250:
-            _upgrade_scout_at(m, scout_1_coord, presses=1)
-            scouts[0]["level"] = 2
-            m.log("upgraded Scout #1 to Level 2", "green")
-            break
+            if _upgrade_scout_at(m, scout_1_coord, presses=1):
+                scouts[0]["level"] = 2
+                m.log("upgraded Scout #1 to Level 2", "green")
+                break
         m.sleep(0.3)
 
     target_scouts = max(12, min(len(slots), m.settings.scout_count))
     match_deadline = time.time() + 22 * 60.0  # 22-minute safety timeout
     last_skip_time = 0.0
     last_sweep_time = 0.0
-    last_bp_sweep = 0.0
+    last_bp_sweep = time.time()
 
     m.log(f"entering main match combat loop (target={target_scouts} scouts, continuous MAX priority)", "bold")
 
@@ -349,8 +398,6 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
         wave = m.read_wave(frame)
 
         # Wave skipping policy:
-        # Waves 1-5: skip immediately for fast startup cash.
-        # Waves 6+: skip periodically when top prompt is active
         now = time.time()
         should_skip = False
         if wave is not None and wave <= 5:
@@ -362,31 +409,22 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
             if click_top_yes(m):
                 last_skip_time = now
 
-        # ---------------- CONTINUOUS MAX UPGRADE & PLACEMENT LOGIC ----------------
-        # Anti-Leak & Max DPS Doctrine for Dead Ahead Easy:
-        # 1. Opening: First 3 Scouts placed and upgraded to Level 2 (Hidden Detection + early DPS).
-        # 2. Priority Burst: Upgrade existing scouts to Level 3 ($950) -> Lead Detection + 23.3 DPS each!
-        # 3. Max Priority: Max existing scouts to Level 4 MAX ($2,550) -> 60 DPS each!
-        # 4. Sequential expansion: Place new scouts up to target_scouts and max them to Level 4 MAX.
-        # 5. Over-cap expansion: If cash remains abundant, keep placing along all 20 slots and maxing.
-        # 6. Periodic verification sweep: Ensures no tower is ever left un-maxed due to network drop.
-
         # Step A: Ensure at least 3 scouts are placed and at Level 2
         if len(scouts) < 3 and len(scouts) < len(slots):
-            next_idx = len(scouts)
             if cash is None or cash >= 250:
-                coord = _place_scout_at(m, slots[next_idx])
-                scouts.append({"coord": coord, "level": 0})
-                m.scouts_placed = len(scouts)
-                m.log(f"placed Scout #{len(scouts)} at {coord}", "green")
-                if cash is not None and cash >= 350:
-                    _upgrade_scout_at(m, coord, presses=1)
-                    scouts[-1]["level"] = 1
-                if cash is not None and cash >= 600:
-                    _upgrade_scout_at(m, coord, presses=1)
-                    scouts[-1]["level"] = 2
-                m.sleep(0.10)
-                continue
+                coord = _place_next_scout(m, slots, scouts, failed_slots)
+                if coord is not None:
+                    scouts.append({"coord": coord, "level": 0})
+                    m.scouts_placed = len(scouts)
+                    m.log(f"placed Scout #{len(scouts)} at {coord}", "green")
+                    if cash is not None and cash >= 350:
+                        if _upgrade_scout_at(m, coord, presses=1):
+                            scouts[-1]["level"] = 1
+                    if cash is not None and cash >= 600:
+                        if _upgrade_scout_at(m, coord, presses=1):
+                            scouts[-1]["level"] = 2
+                    m.sleep(0.10)
+                    continue
 
         # Step B: Bring any placed scout < Level 2 up to Level 2
         under_l2 = [s for s in scouts if s["level"] < 2]
@@ -394,9 +432,9 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
             target = under_l2[0]
             needed = 100 if target["level"] == 0 else 250
             if cash is None or cash >= needed:
-                _upgrade_scout_at(m, target["coord"], presses=1)
-                target["level"] += 1
-                m.log(f"brought Scout to Level {target['level']} (cash=${cash})", "cyan")
+                if _upgrade_scout_at(m, target["coord"], presses=1):
+                    target["level"] += 1
+                    m.log(f"brought Scout to Level {target['level']} (cash=${cash})", "cyan")
                 m.sleep(0.10)
                 continue
 
@@ -404,9 +442,9 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
         under_l3 = [s for s in scouts if s["level"] == 2]
         if under_l3 and (cash is None or cash >= 950):
             target = under_l3[0]
-            _upgrade_scout_at(m, target["coord"], presses=1)
-            target["level"] = 3
-            m.log(f"UPGRADED Scout to Level 3 (Lead Detection + 23.3 DPS)! (cash=${cash})", "magenta")
+            if _upgrade_scout_at(m, target["coord"], presses=1):
+                target["level"] = 3
+                m.log(f"UPGRADED Scout to Level 3 (Lead Detection + 23.3 DPS)! (cash=${cash})", "magenta")
             m.sleep(0.10)
             continue
 
@@ -414,29 +452,28 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
         under_l4 = [s for s in scouts if s["level"] == 3]
         if under_l4 and (cash is None or cash >= 2550):
             target = under_l4[0]
-            _upgrade_scout_at(m, target["coord"], presses=1)
-            target["level"] = 4
-            m.log(f"MAXED Scout to Level 4 (60.0 DPS)! (cash=${cash})", "bold green")
+            if _upgrade_scout_at(m, target["coord"], presses=1):
+                target["level"] = 4
+                m.log(f"MAXED Scout to Level 4 (60.0 DPS)! (cash=${cash})", "bold green")
             m.sleep(0.10)
             continue
 
         # Step E: Place new scouts up to target_scouts and step-by-step upgrade them
         if len(scouts) < target_scouts and len(scouts) < len(slots):
-            # Only place new scout if cash permits ($250 to place)
             if cash is None or cash >= 250:
-                next_idx = len(scouts)
-                coord = _place_scout_at(m, slots[next_idx])
-                scouts.append({"coord": coord, "level": 0})
-                m.scouts_placed = len(scouts)
-                m.log(f"placed Scout #{len(scouts)}/{target_scouts} at {coord}", "green")
-                if cash is not None and cash >= 350:
-                    _upgrade_scout_at(m, coord, presses=1)
-                    scouts[-1]["level"] = 1
-                if cash is not None and cash >= 600:
-                    _upgrade_scout_at(m, coord, presses=1)
-                    scouts[-1]["level"] = 2
-                m.sleep(0.10)
-                continue
+                coord = _place_next_scout(m, slots, scouts, failed_slots)
+                if coord is not None:
+                    scouts.append({"coord": coord, "level": 0})
+                    m.scouts_placed = len(scouts)
+                    m.log(f"placed Scout #{len(scouts)}/{target_scouts} at {coord}", "green")
+                    if cash is not None and cash >= 350:
+                        if _upgrade_scout_at(m, coord, presses=1):
+                            scouts[-1]["level"] = 1
+                    if cash is not None and cash >= 600:
+                        if _upgrade_scout_at(m, coord, presses=1):
+                            scouts[-1]["level"] = 2
+                    m.sleep(0.10)
+                    continue
 
         # Step F: Ensure ANY remaining scout not at Level 4 gets upgraded to MAX
         any_under_max = [s for s in scouts if s["level"] < 4]
@@ -444,34 +481,35 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
             target = any_under_max[0]
             cost = 100 if target["level"] == 0 else (250 if target["level"] == 1 else (950 if target["level"] == 2 else 2550))
             if cash is None or cash >= cost:
-                _upgrade_scout_at(m, target["coord"], presses=1)
-                target["level"] += 1
-                lvl_str = "Level 4 MAX (60 DPS)" if target["level"] == 4 else f"Level {target['level']}"
-                m.log(f"progressed Scout to {lvl_str} (cash=${cash})", "bold cyan")
+                if _upgrade_scout_at(m, target["coord"], presses=1):
+                    target["level"] += 1
+                    lvl_str = "Level 4 MAX (60 DPS)" if target["level"] == 4 else f"Level {target['level']}"
+                    m.log(f"progressed Scout to {lvl_str} (cash=${cash})", "bold cyan")
                 m.sleep(0.10)
                 continue
 
         # Step G: Surplus cash expansion - if all target scouts are MAX and we still have slots & cash
         if len(scouts) < len(slots) and (cash is None or cash >= 250):
-            next_idx = len(scouts)
-            coord = _place_scout_at(m, slots[next_idx])
-            scouts.append({"coord": coord, "level": 0})
-            m.scouts_placed = len(scouts)
-            m.log(f"surplus placement: Scout #{len(scouts)}/{len(slots)} at {coord}", "green")
-            m.sleep(0.10)
-            continue
+            coord = _place_next_scout(m, slots, scouts, failed_slots)
+            if coord is not None:
+                scouts.append({"coord": coord, "level": 0})
+                m.scouts_placed = len(scouts)
+                m.log(f"surplus placement: Scout #{len(scouts)}/{len(slots)} at {coord}", "green")
+                m.sleep(0.10)
+                continue
 
         # Step H: Max Assurance Sweep - periodically tap scouts with 'e' to guarantee none were missed
         if now - last_sweep_time > 12.0 and (cash is None or cash >= 950):
             last_sweep_time = now
             for s in scouts:
                 if s["level"] < 4:
-                    _upgrade_scout_at(m, s["coord"], presses=1)
+                    if _upgrade_scout_at(m, s["coord"], presses=1):
+                        s["level"] += 1
                     m.sleep(0.08)
 
         # Step I: Battlepass Farm Sweep (collecting seasonal event drops)
         bp_interval = getattr(m.settings, "battlepass_interval_s", 12.0)
-        if getattr(m.settings, "battlepass_farm", False) and (now - last_bp_sweep >= bp_interval):
+        if getattr(m.settings, "battlepass_farm", False) and len(scouts) >= 3 and (now - last_bp_sweep >= bp_interval):
             last_bp_sweep = now
             collect_battlepass_drops(m)
 

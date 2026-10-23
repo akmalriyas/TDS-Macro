@@ -681,17 +681,82 @@ def walk_from_override_to_map_selector(m: Macro) -> None:
     m.log("finished map selector walk; proceeding to Ready", "yellow")
 
 
-def ready_up(m: Macro) -> None:
-    m.log("clicking Ready at bottom of screen", "bold")
-    det = m.detect()
-    if det.state == State.OVERRIDE:
-        close_modal(m)
+def get_ready_region(frame: np.ndarray) -> tuple[int, int, int, int]:
+    """Dynamically scaled region for the bottom Ready button across 1080p, 1440p, 4K."""
+    h, w = frame.shape[:2]
+    return (int(w * 0.35), int(h * 0.76), int(w * 0.40), int(h * 0.22))
+
+
+def ready_up(m: Macro) -> bool:
+    """Click Ready at the bottom of the screen with a verification loop to guarantee it registers."""
+    m.log("clicking Ready at bottom of screen with verification loop", "bold")
+
+    for attempt in range(6):
+        m.check_interrupts()
+        frame = m.grab()
+        det = m.detector.detect(frame)
+
+        # If match already loading or gameplay started, ready succeeded!
+        if det.state in (State.GAMEPLAY_PREP, State.GAMEPLAY, State.LOADING):
+            m.log("match loading/started; Ready confirmed", "green")
+            return True
+
+        if det.state in (State.OVERRIDE, State.MODIFIERS):
+            m.log("modal covering Ready button; closing modal", "yellow")
+            close_modal(m)
+            time.sleep(0.5)
+            frame = m.grab()
+
+        region = get_ready_region(frame)
+        lines = m.ocr.recognize(frame, region)
+        text = " ".join(l.norm for l in lines)
+
+        # Check if already verified ready: "ready (1/1)" or "unready"
+        if "ready (1/1)" in text or "ready(1/1)" in text or "unready" in text or "1/1" in text:
+            m.log("Ready state verified (1/1)!", "bold green")
+            return True
+
+        clicked = False
+        for l in lines:
+            if "ready" in l.norm:
+                m.log(f"found Ready button at {l.box.center}; clicking", "cyan")
+                inp.click(*l.box.center)
+                clicked = True
+                break
+
+        if not clicked:
+            # Fall back to green button detection in bottom bar
+            green_boxes = vision.find_green_buttons(frame, region, min_area=800)
+            if green_boxes:
+                target_box = green_boxes[0]
+                m.log(f"found green Ready button at {target_box.center}; clicking", "cyan")
+                inp.click_box(target_box.tuple)
+                clicked = True
+            else:
+                h, w = frame.shape[:2]
+                fallback_xy = (int(w * 0.50), int(h * 0.88))
+                m.log(f"Ready text/green button not resolved; trying center fallback at {fallback_xy}", "yellow")
+                inp.click(*fallback_xy)
+                clicked = True
+
         time.sleep(0.8)
-    if not m.click_text("ready", region=READY_REGION, timeout=5.0, fuzzy=0.8):
-        # Fall back to the green Ready button at the bottom center (refs/221617.png).
-        if not m.click_green((950, 1160, 1050, 220), min_area=1200):
-            m.click_fixed(1280, 1260)
-    time.sleep(1.0)
+
+        # Verify post-click
+        post_frame = m.grab()
+        post_det = m.detector.detect(post_frame)
+        if post_det.state in (State.GAMEPLAY_PREP, State.GAMEPLAY, State.LOADING):
+            m.log("Ready verified: transitioned to game prep", "green")
+            return True
+
+        post_lines = m.ocr.recognize(post_frame, region)
+        post_text = " ".join(l.norm for l in post_lines)
+        if "ready (1/1)" in post_text or "ready(1/1)" in post_text or "unready" in post_text or "1/1" in post_text:
+            m.log("Ready verified: button changed to (1/1)", "green")
+            return True
+
+        m.log(f"Ready verification attempt {attempt + 1}/6 pending; retrying...", "yellow")
+
+    return False
 
 
 def run_intermission(m: Macro) -> None:
