@@ -240,6 +240,36 @@ def _upgrade_scout_at(m: Macro, coord: tuple[int, int], presses: int = 1) -> boo
     return True
 
 
+def collect_battlepass_drops(m: Macro) -> None:
+    """Perform a quick collection sweep forward toward the track/killzone to collect dropped battlepass
+    event tokens (e.g. sickles, crystals, pumpkins), then return immediately to starting position."""
+    m.log("Battlepass Farm: sweeping forward toward track to vacuum dropped tokens", "cyan")
+    prev_status = getattr(m, "_custom_status", None)
+    m._custom_status = "Battlepass Farm"
+    m.notify_status()
+    try:
+        # 1. Walk forward toward the track
+        m.hold(["w"], 1.35)
+        time.sleep(0.08)
+        # 2. Sweep left along the road shoulder
+        m.hold(["a"], 0.60)
+        time.sleep(0.05)
+        # 3. Sweep across the road to the right shoulder
+        m.hold(["d"], 1.20)
+        time.sleep(0.05)
+        # 4. Re-center
+        m.hold(["a"], 0.60)
+        time.sleep(0.08)
+        # 5. Return backward to baseline position
+        m.hold(["s"], 1.35)
+        time.sleep(0.12)
+    except Exception as exc:
+        m.log(f"Battlepass sweep interrupted: {exc}", "yellow")
+    finally:
+        m._custom_status = prev_status
+        m.notify_status()
+
+
 def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
     """Execute a full Dead Ahead match using the optimal burst DPS Golden Scout progression:
 
@@ -294,6 +324,7 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
     match_deadline = time.time() + 22 * 60.0  # 22-minute safety timeout
     last_skip_time = 0.0
     last_sweep_time = 0.0
+    last_bp_sweep = 0.0
 
     m.log(f"entering main match combat loop (target={target_scouts} scouts, continuous MAX priority)", "bold")
 
@@ -437,6 +468,12 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                 if s["level"] < 4:
                     _upgrade_scout_at(m, s["coord"], presses=1)
                     m.sleep(0.08)
+
+        # Step I: Battlepass Farm Sweep (collecting seasonal event drops)
+        bp_interval = getattr(m.settings, "battlepass_interval_s", 12.0)
+        if getattr(m.settings, "battlepass_farm", False) and (now - last_bp_sweep >= bp_interval):
+            last_bp_sweep = now
+            collect_battlepass_drops(m)
 
         m.sleep(0.08)
 

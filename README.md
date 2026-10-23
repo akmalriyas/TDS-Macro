@@ -31,6 +31,9 @@
   - Full automated deployment of up to 16-20 Scouts along calibrated track boundaries.
   - Upgrades each Scout to Level 2 early, then dynamically maxes out each tower in sequence before final waves.
   - Seamless match conclusion handling: OCRs rewards, tracks coins & gems, and automatically triggers **Play Again**.
+- **Battlepass Farm (Seasonal Drop Sweeper)**:
+  - Toggleable periodic patrol sweeps along the track to vacuum up seasonal event tokens, crystals, sickles, and dropped items.
+  - Net-zero displacement movement returns the character safely back to their original position without interrupting tower upgrades.
 - **Tactile Cyberpunk UI**:
   - Frameless carbon-dark desktop panel with chamfered gamer geometry and neon crimson accents (`#F2113D`).
   - **Interactive Gamer Keycaps**: Click-to-bind physical hotkey mapping with a custom dark palette modal.

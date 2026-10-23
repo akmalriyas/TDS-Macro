@@ -17,7 +17,7 @@ from ..watchdog import HotkeyWatchdog, release_all_game_keys
 from ..webhook import send_discord_webhook
 
 SETTINGS_FILE = LOGS / "ui_settings.json"
-PERSISTED = ("webhook_url", "webhook_on_triumph", "webhook_on_defeat", "webhook_on_error", "webhook_hourly", "use_play_again", "verify_scout_once", "enable_modifiers", "modifiers", "minimize_on_start", "show_hud", "hotkey_start", "hotkey_pause", "hotkey_stop", "hotkey_overlay")
+PERSISTED = ("webhook_url", "webhook_on_triumph", "webhook_on_defeat", "webhook_on_error", "webhook_hourly", "use_play_again", "verify_scout_once", "battlepass_farm", "enable_modifiers", "modifiers", "minimize_on_start", "show_hud", "hotkey_start", "hotkey_pause", "hotkey_stop", "hotkey_overlay")
 
 
 class Core:
@@ -74,6 +74,7 @@ class Core:
         s.webhook_hourly = bool(data.get("webhook_hourly", getattr(s, "webhook_hourly", True)))
         s.use_play_again = bool(data.get("use_play_again", s.use_play_again))
         s.verify_scout_once = bool(data.get("verify_scout_once", s.verify_scout_once))
+        s.battlepass_farm = bool(data.get("battlepass_farm", getattr(s, "battlepass_farm", False)))
         s.enable_modifiers = bool(data.get("enable_modifiers", getattr(s, "enable_modifiers", True)))
         if "modifiers" in data:
             raw_mods = data.get("modifiers")
@@ -256,9 +257,13 @@ class Core:
         if not self.alive() or self.macro is None:
             return "Idle"
         m = self.macro
+        if getattr(m, "_custom_status", None):
+            return m._custom_status
         last = (m.log_history[-1] if m.log_history else "").lower()
         if len(last) > 9 and last[2] == ":" and last[5] == ":":
             last = last[9:].strip()
+        if "battlepass" in last:
+            return "Battlepass Farm"
         if "triumph" in last or "victory" in last:
             return "Victory"
         if "defeat" in last:

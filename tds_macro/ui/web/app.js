@@ -600,10 +600,20 @@ $("#mod-btn-apply")?.addEventListener("click", async () => {
 });
 
 /* -------------------------------------------------------------- settings */
+function updateBpBadge(enabled) {
+  const badge = $("#bp-active-badge");
+  if (!badge) return;
+  badge.textContent = enabled ? "ACTIVE" : "OFF";
+  badge.className = "badge " + (enabled ? "" : "off");
+}
+
 async function loadSettings() {
   const s = await api.get_settings();
   if ($("#set-play-again")) $("#set-play-again").checked = Boolean(s.use_play_again);
   if ($("#set-verify")) $("#set-verify").checked = Boolean(s.verify_scout_once);
+  const bpEnabled = Boolean(s.battlepass_farm);
+  if ($("#set-battlepass-farm")) $("#set-battlepass-farm").checked = bpEnabled;
+  updateBpBadge(bpEnabled);
   if ($("#set-show-hud")) $("#set-show-hud").checked = Boolean(s.show_hud);
   if ($("#set-modifiers-enabled")) $("#set-modifiers-enabled").checked = Boolean(s.enable_modifiers !== false);
   if (Array.isArray(s.modifiers)) {
@@ -628,6 +638,7 @@ async function loadSettings() {
 const collect = () => ({
   use_play_again: $("#set-play-again") ? $("#set-play-again").checked : true,
   verify_scout_once: $("#set-verify") ? $("#set-verify").checked : true,
+  battlepass_farm: $("#set-battlepass-farm") ? $("#set-battlepass-farm").checked : false,
   enable_modifiers: $("#set-modifiers-enabled") ? $("#set-modifiers-enabled").checked : true,
   modifiers: selectedModifiers,
   show_hud: $("#set-show-hud") ? $("#set-show-hud").checked : false,
@@ -645,6 +656,12 @@ const collect = () => ({
 ["#set-play-again", "#set-verify", "#set-on-win", "#set-on-loss", "#set-on-error", "#set-on-hourly"].forEach((id) => {
   const el = $(id);
   if (el) el.addEventListener("change", () => api.save_settings(collect()));
+});
+
+$("#set-battlepass-farm")?.addEventListener("change", async (e) => {
+  updateBpBadge(e.target.checked);
+  await api.save_settings(collect());
+  toast(e.target.checked ? "Battlepass Farm enabled (auto-sweeps dropped tokens)." : "Battlepass Farm disabled.");
 });
 
 $("#set-modifiers-enabled")?.addEventListener("change", async (e) => {

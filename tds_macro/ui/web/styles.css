@@ -66,7 +66,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,.switch input:focu
 .rail-btn .ico{width:19px;height:19px}
 .rail-sep{width:26px;height:1px;background:var(--line2);margin:2px 0}
 
-.stage{position:relative;overflow-y:auto;overflow-x:hidden;padding:34px 40px 28px;background:
+.stage{position:relative;overflow-y:auto;overflow-x:hidden;padding:24px 36px 20px;background:
   radial-gradient(900px 400px at 85% 0%,rgba(242,17,61,.045),transparent 70%),var(--bg)}
 .stage::-webkit-scrollbar{width:8px}
 .stage::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
@@ -75,10 +75,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,.switch input:focu
 .view{position:relative;animation:in .28s var(--ease)}
 @keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-.view-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px}
-h1{font-family:var(--head);font-weight:700;font-size:30px;letter-spacing:.01em;line-height:1.1}
-.sub{margin-top:8px;font-size:11px;color:var(--muted);letter-spacing:.09em}
-.rule{height:1px;background:linear-gradient(90deg,var(--line2),transparent);margin-bottom:22px}
+.view-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+h1{font-family:var(--head);font-weight:700;font-size:26px;letter-spacing:.01em;line-height:1.1}
+.sub{margin-top:6px;font-size:10.5px;color:var(--muted);letter-spacing:.09em}
+.rule{height:1px;background:linear-gradient(90deg,var(--line2),transparent);margin-bottom:14px}
 h2.group{font-family:var(--head);font-weight:600;font-size:12px;letter-spacing:.16em;color:var(--muted);margin:28px 0 12px}
 
 /* ---- buttons ---- */
@@ -127,8 +127,8 @@ h2.group{font-family:var(--head);font-weight:600;font-size:12px;letter-spacing:.
 .bar i{display:block;height:100%;background:var(--accent);box-shadow:0 0 10px var(--accent);transition:width .6s var(--ease)}
 
 /* ---- panels, rows, forms ---- */
-.panel{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 22px}
-.row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 0}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:4px 20px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:10px 0}
 .row+.row,.field+.row{border-top:1px solid var(--line)}
 .row-text{display:flex;flex-direction:column;gap:5px}
 .row-text b{font-family:var(--head);font-weight:600;font-size:14.5px}
