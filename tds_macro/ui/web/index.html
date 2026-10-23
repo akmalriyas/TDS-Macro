@@ -94,7 +94,6 @@
       <button class="rail-btn" data-view="live" title="Live monitor"><svg class="ico"><use href="#i-monitor"/></svg></button>
       <button class="rail-btn" data-view="analytics" title="Analytics"><svg class="ico"><use href="#i-chart"/></svg></button>
       <div class="grow"></div>
-      <button class="rail-btn" data-view="setup" title="Setup & Diagnostics"><svg class="ico"><use href="#i-shield"/></svg></button>
       <button class="rail-btn" data-view="settings" title="Settings"><svg class="ico"><use href="#i-sliders"/></svg></button>
     </aside>
 
@@ -260,8 +259,8 @@
             <button class="btn cut sm" id="reset-progress">RESET</button>
           </div>
           <div class="row">
-            <div class="row-text"><b>System Diagnostics & Setup</b><span>Verify prerequisites, display scaling, Windows OCR pack, and capture pipeline.</span></div>
-            <button class="btn cut sm" id="btn-open-setup">RUN DIAGNOSTICS</button>
+            <div class="row-text"><b>System Diagnostics & Setup</b><span>Restart the macro and launch the environment verification and prerequisite wizard.</span></div>
+            <button class="btn cut sm" id="btn-open-setup">RESTART & DIAGNOSE</button>
           </div>
           <div class="row">
             <div class="row-text"><b>Check for Updates</b><span>Query GitHub for major releases and software updates.</span></div>
@@ -317,31 +316,6 @@
         </div>
         <div class="love-credit">
           <span>Made with <i class="heart">♥</i> by Akmal Riyas</span>
-        </div>
-      </section>
-
-      <!-- SETUP & DIAGNOSTICS -->
-      <section class="view" data-view="setup" hidden>
-        <div class="view-head">
-          <div>
-            <h1>SYSTEM SETUP & DIAGNOSTICS</h1>
-            <p class="sub">PREREQUISITE VERIFICATION & ENVIRONMENT READINESS</p>
-          </div>
-        </div>
-        <div class="rule"></div>
-        <div class="setup-banner" id="setup-banner">
-          <div class="setup-banner-text">
-            <b id="setup-banner-title">CHECKING PREREQUISITES...</b>
-            <span id="setup-banner-sub">Scanning environment components and Roblox readiness</span>
-          </div>
-          <button type="button" class="btn cut sm" id="setup-btn-recheck">RE-SCAN</button>
-        </div>
-        <h2 class="group">SYSTEM VALIDATION CHECKLIST</h2>
-        <div class="setup-list" id="setup-list"></div>
-        <div class="modal-actions" style="margin-top:20px">
-          <span style="font-size:11.5px;color:var(--muted)" id="setup-foot-note">All critical checks must pass before running the autonomous macro</span>
-          <div class="grow"></div>
-          <button type="button" class="btn cut primary" id="setup-btn-continue" disabled>COMPLETE SETUP & CONTINUE</button>
         </div>
       </section>
     </main>

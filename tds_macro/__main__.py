@@ -184,6 +184,12 @@ def cmd_ui(args) -> int:
     return launch_ui(RunSettings())
 
 
+def cmd_setup(_args) -> int:
+    from .ui.app import launch_setup
+
+    return launch_setup()
+
+
 def cmd_run(args) -> int:
     from .flows import runloop
     from .watchdog import HotkeyWatchdog
@@ -256,9 +262,24 @@ def main(argv=None) -> int:
     p = sub.add_parser("ui", help="launch the dark Control Panel UI and HUD overlay")
     p.set_defaults(func=cmd_ui)
 
+    p = sub.add_parser("setup", help="launch first-run setup and diagnostics modal")
+    p.set_defaults(func=cmd_setup)
+
     if argv is None:
         argv = sys.argv[1:]
+
+    if "--setup" in argv or "setup" in argv:
+        from .ui.app import launch_setup
+
+        return launch_setup()
+
     if not argv:
+        from . import validator
+
+        if not validator.is_setup_completed():
+            from .ui.app import launch_setup
+
+            return launch_setup()
         argv = ["ui"]
 
     args = parser.parse_args(argv)

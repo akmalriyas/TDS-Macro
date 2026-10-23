@@ -105,6 +105,11 @@ class Api:
     def download_update(self, url: str) -> dict:
         return self._core.download_update(url)
 
+    def relaunch_setup(self) -> None:
+        import threading
+        _relaunch_setup()
+        threading.Timer(0.1, self.win_close).start()
+
     # window chrome
     def win_minimize(self) -> None:
         self._window.minimize()
@@ -144,6 +149,84 @@ def _setup_hud_clickthrough() -> None:
             )
     except Exception:
         pass
+
+
+class SetupApi:
+    def __init__(self, window: Any = None):
+        self._window = window
+
+    def check_requirements(self) -> dict:
+        from .. import validator
+        return validator.check_all()
+
+    def fix_requirement(self, action_id: str) -> dict:
+        from .. import validator
+        return validator.fix_requirement(action_id)
+
+    def complete_and_launch(self) -> None:
+        import threading
+        from .. import validator
+        validator.mark_setup_completed()
+        _spawn_main_app()
+        if self._window:
+            threading.Timer(0.1, self._window.destroy).start()
+
+    def win_minimize(self) -> None:
+        if self._window:
+            self._window.minimize()
+
+    def win_close(self) -> None:
+        if self._window:
+            self._window.destroy()
+
+
+def _spawn_main_app() -> None:
+    import subprocess
+    import sys
+    if getattr(sys, 'frozen', False):
+        cmd = [sys.executable, 'ui']
+    else:
+        cmd = [sys.executable, '-m', 'tds_macro', 'ui']
+    subprocess.Popen(cmd)
+
+
+def _relaunch_setup() -> None:
+    import subprocess
+    import sys
+    if getattr(sys, 'frozen', False):
+        cmd = [sys.executable, '--setup']
+    else:
+        cmd = [sys.executable, '-m', 'tds_macro', '--setup']
+    subprocess.Popen(cmd)
+
+
+def launch_setup() -> int:
+    ensure_dpi_aware()
+    kernel32 = ctypes.windll.kernel32
+    user32 = ctypes.windll.user32
+    mutex = kernel32.CreateMutexW(None, False, 'Global\\FlareMacro_SingleInstance_Setup')
+    if kernel32.GetLastError() == 183:
+        existing = user32.FindWindowW(None, 'Flare Macro - Setup')
+        if existing:
+            user32.ShowWindow(existing, 9)
+            user32.SetForegroundWindow(existing)
+        return 0
+    api = SetupApi()
+    window = webview.create_window(
+        'Flare Macro - Setup',
+        url=str(WEB_DIR / 'setup.html'),
+        js_api=api,
+        width=580,
+        height=660,
+        min_size=(540, 600),
+        frameless=True,
+        easy_drag=False,
+        background_color='#07080B',
+        text_select=False,
+    )
+    api._window = window
+    webview.start(debug=False)
+    return 0
 
 
 def launch_ui(settings: Optional[RunSettings] = None) -> int:

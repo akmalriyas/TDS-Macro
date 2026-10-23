@@ -32,7 +32,6 @@ function switchView(name) {
   $("#stage").scrollTop = 0;
   if (name === "analytics") loadAnalytics();
   if (name === "live") { renderLive(); loadLog(); }
-  if (name === "setup") runSetupDiagnostics();
 }
 // Attach navigation listeners ONLY to the tab and rail buttons, NOT to section.view containers
 $$(".tab[data-view], .rail-btn[data-view]").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
@@ -786,82 +785,10 @@ $("#wc-min").addEventListener("click", () => api.win_minimize());
 $("#wc-max").addEventListener("click", () => api.win_maximize());
 $("#wc-close").addEventListener("click", () => api.win_close());
 
-/* ----------------------------------------------------- setup & diagnostics */
-async function runSetupDiagnostics() {
-  const bannerTitle = $("#setup-banner-title");
-  const bannerSub = $("#setup-banner-sub");
-  const listEl = $("#setup-list");
-  const continueBtn = $("#setup-btn-continue");
-
-  if (!bannerTitle || !listEl) return;
-
-  bannerTitle.textContent = "SCANNING ENVIRONMENT...";
-  bannerTitle.style.color = "";
-  bannerSub.textContent = "Testing Windows components, OCR pack, display scaling, and capture pipeline";
-  listEl.innerHTML = `<div class="empty">Running diagnostics...</div>`;
-  if (continueBtn) continueBtn.disabled = true;
-
-  try {
-    const res = await api.check_requirements();
-    const checks = res.checks || [];
-
-    if (res.critical_passed) {
-      bannerTitle.textContent = "ENVIRONMENT READY";
-      bannerTitle.style.color = "var(--ok)";
-      bannerSub.textContent = "All critical system prerequisites verified successfully.";
-      if (continueBtn) continueBtn.disabled = false;
-    } else {
-      bannerTitle.textContent = "ACTION REQUIRED";
-      bannerTitle.style.color = "var(--accent)";
-      bannerSub.textContent = "One or more critical prerequisites must be resolved.";
-      if (continueBtn) continueBtn.disabled = true;
-    }
-
-    listEl.innerHTML = checks.map((c) => {
-      const dotCls = c.passed ? "pass" : (c.critical ? "fail" : "warn");
-      const badgeCls = c.passed ? "pass" : (c.critical ? "fail" : "warn");
-      const fixBtn = c.fix_action ? `<button type="button" class="btn cut xs primary" data-fix="${c.fix_action}">${esc(c.fix_label || "Fix")}</button>` : "";
-      return `
-        <div class="setup-item">
-          <div class="setup-item-main">
-            <i class="setup-item-dot ${dotCls}"></i>
-            <div class="setup-item-text">
-              <b>${esc(c.name)}</b>
-              <span>${esc(c.detail)}</span>
-            </div>
-          </div>
-          <div class="setup-item-actions">
-            ${fixBtn}
-            <span class="setup-badge ${badgeCls}">${esc(c.status)}</span>
-          </div>
-        </div>
-      `;
-    }).join("");
-  } catch (e) {
-    bannerTitle.textContent = "DIAGNOSTIC ERROR";
-    bannerSub.textContent = String(e);
-  }
-}
-
-$("#setup-btn-recheck")?.addEventListener("click", runSetupDiagnostics);
-$("#setup-list")?.addEventListener("click", async (e) => {
-  const btn = e.target.closest("[data-fix]");
-  if (!btn) return;
-  const action = btn.dataset.fix;
-  btn.disabled = true;
-  btn.textContent = "Working...";
-  const r = await api.fix_requirement(action);
-  toast(r.message || "Action executed");
-  setTimeout(runSetupDiagnostics, 2500);
+$("#btn-open-setup")?.addEventListener("click", () => {
+  toast("Restarting macro into Environment Setup & Verification...");
+  setTimeout(() => api.relaunch_setup(), 400);
 });
-
-$("#setup-btn-continue")?.addEventListener("click", async () => {
-  await api.mark_setup_complete();
-  toast("Setup verified and saved!");
-  switchView("queue");
-});
-
-$("#btn-open-setup")?.addEventListener("click", () => switchView("setup"));
 
 /* ---------------------------------------------------------------- updates */
 let pendingUpdate = null;
@@ -950,15 +877,7 @@ window.addEventListener("pywebviewready", async () => {
   presets = await api.presets();
   await loadSettings();
   await refresh();
-
-  // First-launch detection
-  const setupDone = await api.is_setup_complete();
-  if (!setupDone) {
-    switchView("setup");
-  } else {
-    switchView("queue");
-  }
-
+  switchView("queue");
   tick();
 
   // Background check for GitHub updates
