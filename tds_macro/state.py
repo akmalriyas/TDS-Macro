@@ -125,8 +125,9 @@ class StateDetector:
         if _has(lines, "solar requiem") and _has(lines, "survival"):
             return Detection(State.PLAY_MENU, lines, 0.9, "play menu")
 
-        # Main lobby.
-        if _has(lines, "play") and (_has(lines, "store") or _has(lines, "items") or _has(lines, "skills")):
+        # Main lobby: signature sidebar buttons (Store, Items, Skills, Party, Quests, Index).
+        sidebar_hits = sum(1 for w in ("store", "items", "skills", "party", "quests", "index") if _has(lines, w, fuzzy=0.85))
+        if sidebar_hits >= 2 or (_has(lines, "play") and (_has(lines, "store") or _has(lines, "items") or _has(lines, "skills"))):
             return Detection(State.LOBBY, lines, 1.0, "main lobby")
         if _has(lines, "coins") and _has(lines, "gems") and _has(lines, "play"):
             return Detection(State.LOBBY, lines, 1.0, "main lobby")

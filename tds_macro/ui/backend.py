@@ -40,6 +40,9 @@ class Core:
         self.lock = threading.Lock()
         self.window: Any = None
         self.hud_window: Any = None
+        self._hud_stop_event = threading.Event()
+        self._hud_sync_thread = threading.Thread(target=self._hud_sync_loop, daemon=True, name="tds-hud-sync")
+        self._hud_sync_thread.start()
         self.watchdog = HotkeyWatchdog(
             on_start=self.start,
             on_pause=self.toggle_pause,
@@ -120,8 +123,27 @@ class Core:
             except Exception:
                 pass
 
+    def _hud_sync_loop(self) -> None:
+        """Dedicated background sync loop to keep HUD overlay telemetry updated at 2.5Hz."""
+        while not self._hud_stop_event.is_set():
+            if self.hud_window is not None and getattr(self.settings, "show_hud", True):
+                try:
+                    st = self.get_state()
+                    self.sync_hud(st)
+                except Exception:
+                    pass
+            time.sleep(0.4)
+
+    def _on_macro_status(self) -> None:
+        """Triggered immediately when the macro updates cash, wave, or status."""
+        try:
+            st = self.get_state()
+            self.sync_hud(st)
+        except Exception:
+            pass
+
     def sync_hud(self, state_dict: dict) -> None:
-        if self.hud_window is not None and self.settings.show_hud:
+        if self.hud_window is not None and getattr(self.settings, "show_hud", True):
             try:
                 payload = json.dumps(state_dict)
                 self.hud_window.evaluate_js(f"updateHud({payload})")
@@ -155,6 +177,7 @@ class Core:
                 self.status = "IDLE"
                 return
             self.macro = Macro(self.settings)
+            self.macro.on_status_change = self._on_macro_status
             self.status = "RUNNING"
             self.started_at = time.time()
             self.session_base = len(self.runlog.records())
@@ -378,4 +401,5 @@ class Core:
     # ----------------------------------------------------------------- window
     def shutdown(self) -> None:
         self.stop()
+        self._hud_stop_event.set()
         self.watchdog.close()

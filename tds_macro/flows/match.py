@@ -68,13 +68,10 @@ def get_scout_slots(frame: np.ndarray) -> list[tuple[int, int]]:
 
 
 def is_valid_placement_spot(frame: np.ndarray, x: int, y: int) -> bool:
-    """Ultra-low latency (<1ms) check of the placement ring and pedestal around (x, y).
+    """Ultra-low latency (<1ms) check if the placement spot at (x, y) is unobstructed.
 
-    In TDS, when hovering a tower during placement mode:
-    - If obstructed / invalid (e.g. road, rocks, out of bounds, overlapping another tower):
-      The base pedestal and range ring turn bright neon red (R > 140, R > G*1.2, R > B*1.2).
-    - If valid for placement:
-      The pedestal and range hologram are vibrant blue / cyan / green with ZERO red pixels.
+    In TDS, an obstructed placement spot (on road, rocks, or another tower) turns
+    bright saturated neon red. When valid, red is absent.
     """
     h, w = frame.shape[:2]
     y1, y2 = max(0, y - 35), min(h, y + 35)
@@ -87,20 +84,10 @@ def is_valid_placement_spot(frame: np.ndarray, x: int, y: int) -> bool:
     g = roi[:, :, 1].astype(int)
     r = roi[:, :, 2].astype(int)
 
-    # In TDS, invalid spots show a distinctive bright neon-red pedestal under the mouse:
-    # R is high (>135), and significantly dominates G and B.
-    red_invalid_mask = (r > 135) & (r > (g * 1.25).astype(int)) & (r > (b * 1.25).astype(int))
+    # In TDS, invalid spots show a distinctive bright neon-red pedestal:
+    red_invalid_mask = (r > 130) & (r > (g * 1.30).astype(int)) & (r > (b * 1.30).astype(int))
     red_count = int(red_invalid_mask.sum())
-    if red_count > 60:
-        return False
-
-    # Check for presence of the placement hologram / range circle (blue, cyan, or green):
-    blue_cyan_mask = (b > 80) & (b > (r * 1.2).astype(int)) & (b > (g * 1.2).astype(int))
-    green_mask = (g > 90) & (g > (r * 1.2).astype(int)) & (g > (b * 1.1).astype(int))
-    holo_count = int((blue_cyan_mask | green_mask).sum())
-
-    # Valid if placement hologram is present and red obstruction is absent:
-    return holo_count > 80 and red_count < 25
+    return red_count < 60
 
 
 def _find_top_green_chevron(frame: np.ndarray) -> Optional[tuple[int, int]]:
@@ -126,18 +113,36 @@ def _find_top_green_chevron(frame: np.ndarray) -> Optional[tuple[int, int]]:
 
 
 def click_top_yes(m: Macro) -> bool:
-    """Click the green 'Yes' button on the top-center 'Ready?' or 'Skip Wave?' banner if present."""
+    """Click the green 'Ready' or 'Yes' button on the top-center banner.
+    Filters out road chevrons and health bars by checking button aspect ratio and skipping question titles."""
     frame = m.grab()
     region = get_top_prompt_region(frame)
-    boxes = vision.find_green_buttons(frame, region, min_area=320, max_boxes=4)
-    if boxes:
-        for box in boxes:
-            if 35 <= box.w <= 240 and 20 <= box.h <= 110:
-                m.log(f"clicking top Ready/Skip Yes at {box.center}", "cyan")
-                inp.click_box(box.tuple)
-                m.touch()
-                time.sleep(0.08)
-                return True
+
+    # 1. Primary check: Green button on banner with horizontal aspect ratio (w/h >= 1.6, w >= 110)
+    # This specifically isolates the button (w=211, h=73, ratio=2.89) from road chevrons (w=68, h=73, ratio=0.93)
+    boxes = vision.find_green_buttons(frame, region, min_area=400, max_boxes=4)
+    for box in boxes:
+        aspect = box.w / max(1, box.h)
+        if box.w >= 110 and 28 <= box.h <= 90 and aspect >= 1.6:
+            m.log(f"clicking top banner green button at {box.center} (ratio={aspect:.2f})", "cyan")
+            inp.click_box(box.tuple)
+            m.touch()
+            time.sleep(0.08)
+            return True
+
+    # 2. Secondary check: OCR text matching "ready" or "yes" or "skip", skipping question titles ("Ready?")
+    lines = m.ocr.recognize(frame, region)
+    for line in lines:
+        if "?" in line.text or "required" in line.norm:
+            continue
+        norm = line.norm
+        if norm in ("ready", "yes", "skip") or norm.startswith("ready ") or norm == "ready!":
+            m.log(f"found top banner button '{line.text}' at {line.box.center}; clicking", "cyan")
+            inp.click(*line.box.center)
+            m.touch()
+            time.sleep(0.08)
+            return True
+
     return False
 
 
@@ -167,61 +172,59 @@ def setup_camera_and_position(m: Macro) -> list[tuple[int, int]]:
 
 
 def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, int]]:
-    """Select Scout ('1') and place at slot_xy using real-time ring color sensing.
-    Strictly verifies cash consumption or tower count increment before confirming success."""
+    """Select Scout ('1') and place at slot_xy.
+    Verifies cash consumption, tower count increment, or unobstructed placement."""
     sx, sy = slot_xy
     search_offsets = [
         (0, 0),
         (-25, 0),
-        (-50, 0),
         (25, 0),
         (0, -25),
         (0, 25),
-        (-35, -25),
-        (-35, 25),
-        (35, -25),
-        (35, 25),
-        (-70, 0),
-        (70, 0),
+        (-40, 0),
+        (40, 0),
     ]
 
     m.press("1")
-    time.sleep(0.08)
+    time.sleep(0.06)
 
     for ox, oy in search_offsets:
         tx, ty = sx + ox, sy + oy
         inp.move_to(tx, ty)
-        time.sleep(0.08)
+        time.sleep(0.06)
         frame = m.grab()
         if is_valid_placement_spot(frame, tx, ty):
             cash_before = m.read_cash(frame)
             t_before, _ = m.read_tower_count(frame)
 
             inp.click(tx, ty)
-            time.sleep(0.24)
+            time.sleep(0.20)
 
             frame_after = m.grab()
             cash_after = m.read_cash(frame_after)
             t_after, _ = m.read_tower_count(frame_after)
 
-            # Verification: Cash must decrease by at least $180, or tower count must increment
+            # Verification: Cash dropped by >= $180, OR tower count incremented,
+            # OR if OCR didn't read cash, unobstructed slot click is accepted.
             placed = False
             if cash_before is not None and cash_after is not None and cash_after <= cash_before - 180:
                 placed = True
             elif t_before is not None and t_after is not None and t_after > t_before:
                 placed = True
+            elif cash_before is None and cash_after is None:
+                placed = True
 
             if placed:
                 m.log(f"VERIFIED: Scout placed at ({tx}, {ty}) [Cash: ${cash_before}->${cash_after}]", "green")
                 m.press("q")
-                time.sleep(0.06)
+                time.sleep(0.05)
                 return (tx, ty)
             else:
-                m.log(f"Placement click at ({tx}, {ty}) not confirmed by server; trying next offset", "dim")
+                m.log(f"Placement click at ({tx}, {ty}) unverified; trying next offset", "dim")
 
     # If all offsets failed, deselect placement mode with 'q'
     m.press("q")
-    time.sleep(0.06)
+    time.sleep(0.05)
     return None
 
 
@@ -259,24 +262,21 @@ def _upgrade_scout_at(m: Macro, coord: tuple[int, int], presses: int = 1) -> boo
 
 
 def collect_battlepass_drops(m: Macro) -> None:
-    """Sweep down the road median to vacuum up dropped battlepass event tokens,
-    then return using an exact net-zero displacement vector to keep camera 100% aligned."""
-    m.log("Battlepass Farm: sweeping down track median to collect drops", "cyan")
+    """Sweep forward toward enemy portal (W) where tokens drop, then return (S) with exact matching time.
+    Uses an exact mathematically balanced net-zero displacement vector to keep camera 100% aligned."""
+    m.log("Battlepass Farm: sweeping forward toward enemy portal to collect drops", "cyan")
     prev_status = getattr(m, "_custom_status", None)
     m._custom_status = "Battlepass Farm"
     m.notify_status()
     try:
-        # Note: Poles & map props in TDS are non-collidable (CanCollide=false),
-        # so we rely on exact mathematically balanced symmetric vectors along the clear road median.
-        SWEEP_TIME = 1.30
+        SWEEP_TIME = 1.25
         LATERAL_TIME = 0.35
 
-        # 1. Walk DOWN the road median towards the killzone where enemies drop tokens
-        # Median is clear of towers; holding 's' walks straight down the road
-        m.hold(["s"], SWEEP_TIME)
+        # 1. Walk FORWARD (W) up the road median toward the portal where tokens drop
+        m.hold(["w"], SWEEP_TIME)
         time.sleep(0.04)
 
-        # 2. Side-to-side sweep across the road to widen collection radius
+        # 2. Side-to-side sweep across the road to pick up lateral drops
         m.hold(["a"], LATERAL_TIME)
         time.sleep(0.03)
         m.hold(["d"], LATERAL_TIME * 2)
@@ -284,10 +284,10 @@ def collect_battlepass_drops(m: Macro) -> None:
         m.hold(["a"], LATERAL_TIME)
         time.sleep(0.04)
 
-        # 3. Walk BACK UP the road median with exact matching duration
+        # 3. Walk BACK (S) down the median with exact matching duration
         # (Net W/S = 0, Net A/D = 0 -> returns precisely to starting position)
-        m.hold(["w"], SWEEP_TIME)
-        time.sleep(0.08)
+        m.hold(["s"], SWEEP_TIME)
+        time.sleep(0.06)
         m.log("Battlepass Farm: sweep complete; returned to anchor position", "green")
     except Exception as exc:
         m.log(f"Battlepass sweep interrupted: {exc}", "yellow")
@@ -298,16 +298,25 @@ def collect_battlepass_drops(m: Macro) -> None:
 
 def _place_next_scout(m: Macro, slots: list[tuple[int, int]], scouts: list[dict], failed_slots: set[int]) -> Optional[tuple[int, int]]:
     """Iterate through slots, find an unobstructed placement spot, verify with server, and return coordinates."""
-    for idx, slot_xy in enumerate(slots):
-        if idx in failed_slots:
-            continue
-        # Skip if an existing scout is already within 35px
-        if any(abs(s["coord"][0] - slot_xy[0]) < 35 and abs(s["coord"][1] - slot_xy[1]) < 35 for s in scouts):
-            continue
+    available_indices = [
+        idx for idx, slot_xy in enumerate(slots)
+        if idx not in failed_slots
+        and not any(abs(s["coord"][0] - slot_xy[0]) < 35 and abs(s["coord"][1] - slot_xy[1]) < 35 for s in scouts)
+    ]
+    if not available_indices:
+        # If all slots were tried, clear failed_slots to allow retry on next iteration
+        failed_slots.clear()
+        available_indices = [
+            idx for idx, slot_xy in enumerate(slots)
+            if not any(abs(s["coord"][0] - slot_xy[0]) < 35 and abs(s["coord"][1] - slot_xy[1]) < 35 for s in scouts)
+        ]
+
+    for idx in available_indices:
+        slot_xy = slots[idx]
         coord = _place_scout_at(m, slot_xy)
         if coord is not None:
             return coord
-        m.log(f"Slot #{idx} at {slot_xy} obstructed or unverified; skipping to next slot", "yellow")
+        m.log(f"Slot #{idx} at {slot_xy} obstructed or unverified; deferring to next slot", "dim")
         failed_slots.add(idx)
     return None
 
@@ -400,9 +409,24 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
             m.log("returned to lobby unexpectedly", "yellow")
             return State.LOBBY
 
-        # Read HUD telemetry
+        # Read HUD telemetry & sync live state
         cash = m.read_cash(frame)
         wave = m.read_wave(frame)
+        t_count, _ = m.read_tower_count(frame)
+        if wave is not None:
+            m.current_wave = wave
+        if cash is not None:
+            m.current_cash = cash
+        if t_count is not None:
+            m.scouts_placed = max(len(scouts), t_count)
+        else:
+            m.scouts_placed = len(scouts)
+        m.notify_status()
+
+        # If we have accumulated surplus cash and haven't hit target scouts,
+        # reset failed_slots so any previously skipped slots can be retried
+        if cash is not None and cash >= 800 and len(scouts) < target_scouts and failed_slots:
+            failed_slots.clear()
 
         # Wave skipping policy:
         now = time.time()

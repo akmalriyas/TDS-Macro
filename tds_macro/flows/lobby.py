@@ -273,10 +273,15 @@ def check_scout(m: Macro, force: bool = False) -> dict:
 
 def open_play_menu(m: Macro) -> None:
     m.log("opening Play menu", "bold")
-    if not m.click_green(PLAY_BUTTON_REGION, min_area=1500):
-        # Fall back to OCR "PLAY" at the bottom.
-        if not m.click_text("play", region=(900, 1180, 800, 260), timeout=3.0):
-            raise MacroError("PLAY button not found")
+    if not m.click_green(PLAY_BUTTON_REGION, min_area=800):
+        # Fall back to OCR "PLAY" at the bottom
+        if not m.click_text("play", region=(900, 1180, 800, 260), timeout=2.0):
+            # Fall back to calibrated screen-center PLAY button coordinates
+            frame = m.grab()
+            h, w = frame.shape[:2]
+            play_xy = (int(w * 0.50), int(h * 0.885))
+            m.log(f"falling back to calibrated PLAY button click at {play_xy}", "yellow")
+            inp.click(*play_xy)
     time.sleep(1.4)
     det = m.wait_for_state([State.PLAY_MENU, State.SQUAD_SELECT], timeout=15.0)
     if det.state == State.SQUAD_SELECT:
