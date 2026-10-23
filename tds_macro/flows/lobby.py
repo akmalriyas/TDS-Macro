@@ -503,9 +503,8 @@ def vote_on_board_pad(m: Macro, board_idx: int) -> None:
 
 def _try_trigger_override_prompt(m: Macro) -> bool:
     """Press/hold E or click '[E] Override Map' prompt and check if State.OVERRIDE opens."""
-    # Roblox proximity prompts require holding E for 0.8s..1.0s; hold for 1.2s to ensure completion
     m.hold(["e"], 1.2)
-    time.sleep(0.75)
+    time.sleep(0.35)
     frame = m.grab()
     det = m.detector.detect(frame)
     if det.state == State.OVERRIDE:
@@ -518,7 +517,7 @@ def _try_trigger_override_prompt(m: Macro) -> bool:
         m.log(f"saw Override Map prompt at ({cx},{cy}); clicking and holding E", "cyan")
         m.click_fixed(cx, max(100, cy - 35))
         m.hold(["e"], 1.2)
-        time.sleep(0.85)
+        time.sleep(0.4)
         if m.detect().state == State.OVERRIDE:
             return True
     return False
@@ -542,32 +541,25 @@ def walk_to_override_from_spawn(m: Macro) -> None:
     m.log("walking from spawn to Override Map machine (red circle)", "bold")
     # From spawn looking at the room: red circle is right and forward
     m.hold(["d", "w"], 1.6)
-    time.sleep(0.15)
-    m.hold(["w"], 0.4)
+    time.sleep(0.1)
+    m.hold(["w"], 0.75)
+    time.sleep(0.1)
     m.hold(["d"], 0.4)
-    time.sleep(0.25)
+    time.sleep(0.2)
     m.snap("at_override_terminal")
 
     if _try_trigger_override_prompt(m):
         return
 
-    # Search pattern around the red circle if the first E did not open the modal.
-    nudges: list[tuple[list[str], float]] = [
-        (["w"], 0.35),
-        (["d"], 0.30),
-        (["s"], 0.35),
-        (["a"], 0.35),
-        (["w", "d"], 0.30),
-    ]
-    for keys, dur in nudges:
-        m.log(f"nudging {keys} ({dur:.2f}s) to trigger Override Map prompt", "yellow")
+    # One quick nudge forward if needed
+    for keys, dur in [((["w"], 0.35)), (["d"], 0.30)]:
         m.hold(keys, dur)
-        time.sleep(0.2)
+        time.sleep(0.15)
         if _try_trigger_override_prompt(m):
             return
 
     # Final wait check in case of UI lag
-    m.wait_for_state(State.OVERRIDE, timeout=4.0)
+    m.wait_for_state(State.OVERRIDE, timeout=3.0)
 
 
 def walk_to_map_board(m: Macro) -> None:
@@ -787,6 +779,8 @@ def run_intermission(m: Macro) -> None:
     4. Click Ready at the bottom of the screen.
     """
     det = m.detect()
+    if det.state in (State.GAMEPLAY_PREP, State.GAMEPLAY):
+        return
     if det.state != State.INTERMISSION:
         m.wait_for_state(State.INTERMISSION, timeout=20.0)
 
@@ -799,6 +793,9 @@ def run_intermission(m: Macro) -> None:
     else:
         m.log("game modifiers disabled in Run Settings; skipping modifier vote", "dim")
 
+    if m.detect().state in (State.GAMEPLAY_PREP, State.GAMEPLAY):
+        return
+
     ensure_facing_room(m)
     existing_board = scan_boards_for_dead_ahead(m)
 
@@ -808,6 +805,8 @@ def run_intermission(m: Macro) -> None:
     else:
         m.log("Dead Ahead is not in the pool; overriding via machine", "bold")
         for attempt in range(2):
+            if m.detect().state in (State.GAMEPLAY_PREP, State.GAMEPLAY):
+                return
             try:
                 walk_to_override_from_spawn(m)
                 override_dead_ahead(m)
@@ -815,6 +814,8 @@ def run_intermission(m: Macro) -> None:
                 break
             except Exception as exc:
                 m.log(f"override attempt {attempt+1} encountered ({exc}); retrying", "yellow")
-                time.sleep(1.0)
+                if m.detect().state in (State.GAMEPLAY_PREP, State.GAMEPLAY):
+                    return
+                time.sleep(0.5)
 
     ready_up(m)

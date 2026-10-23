@@ -388,6 +388,15 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
         if det.state in (State.VICTORY, State.DEFEAT):
             return det.state
 
+    # Map validation fail-safe: Dead Ahead on Easy always has exactly 100 Base Health.
+    # If another map accidentally started (e.g. Simplicity with 175 HP), abort immediately to return to Dead Ahead.
+    frame = m.grab()
+    lines = m.ocr.recognize(frame, (1000, 20, 560, 100))
+    health_text = " ".join(l.norm for l in lines)
+    if "175" in health_text:
+        m.log("WRONG MAP DETECTED (Base Health 175)! Aborting match immediately to return to Dead Ahead", "bold red")
+        return State.DEFEAT
+
     slots = setup_camera_and_position(m)
     failed_slots: set[int] = set()
 
