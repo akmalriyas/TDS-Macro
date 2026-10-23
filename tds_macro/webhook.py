@@ -6,51 +6,41 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-DEFAULT_LOGO_URL = "https://raw.githubusercontent.com/akmalriyas/TDS-Macro/main/tds_macro/assets/logo.png"
-
-DEFAULT_AUTHOR = {
-    "name": "FLARE // TDS AUTOMATION",
-    "icon_url": DEFAULT_LOGO_URL,
-}
+GREEN = 0x2FE08A
+RED = 0xF2113D
+AMBER = 0xF5B301
+NEUTRAL = 0x2B2D31
 
 
 def send_discord_webhook(
     url: str,
     *,
     title: str,
-    description: str,
-    color: int = 0xF2113D,  # Flare neon crimson accent
+    description: str = "",
+    color: int = RED,
     fields: Optional[list[dict[str, Any]]] = None,
-    author: Optional[dict[str, str]] = None,
-    footer: str = "Flare Macro • TDS Autonomous Engine",
+    footer: str = "Flare Macro",
 ) -> tuple[bool, str]:
-    """Send a rich Discord embed to the configured webhook URL."""
+    """Send a single Discord embed to the configured webhook URL."""
     if not url or not url.startswith("https://discord.com/api/webhooks/"):
         return False, "Invalid Discord webhook URL"
 
     embed: dict[str, Any] = {
         "title": title,
-        "description": description,
         "color": color,
-        "fields": fields or [],
-        "footer": {"text": footer, "icon_url": DEFAULT_LOGO_URL},
+        "footer": {"text": footer},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-
-    auth = author if author is not None else DEFAULT_AUTHOR
-    if auth:
-        embed["author"] = auth
-
-    payload = {"embeds": [embed]}
+    if description:
+        embed["description"] = description
+    if fields:
+        embed["fields"] = fields
 
     try:
         req = urllib.request.Request(
             url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "FlareMacro-TDS/2.16",
-            },
+            data=json.dumps({"embeds": [embed]}).encode("utf-8"),
+            headers={"Content-Type": "application/json", "User-Agent": "FlareMacro-TDS"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=8.0) as resp:
@@ -59,6 +49,14 @@ def send_discord_webhook(
             return False, f"Discord returned HTTP status {resp.status}"
     except Exception as e:
         return False, str(e)
+
+
+def _field(name: str, value: str) -> dict[str, Any]:
+    return {"name": name, "value": value, "inline": True}
+
+
+def _mmss(seconds: float) -> str:
+    return f"{int(seconds // 60)}:{int(seconds % 60):02d}"
 
 
 def send_run_result_webhook(
@@ -75,33 +73,18 @@ def send_run_result_webhook(
     total_coins: int = 0,
     coins_per_hr: float = 0.0,
 ) -> tuple[bool, str]:
-    """Send a refined post-match run summary card to Discord."""
-    is_victory = outcome.lower() in ("victory", "triumph", "win")
-    status_label = "TRIUMPH" if is_victory else "DEFEAT"
-    title = f"MATCH COMPLETED — {status_label}"
-    color = 0x10B981 if is_victory else 0xF2113D
-
-    mins = int(duration_s // 60)
-    secs = int(duration_s % 60)
-    time_str = f"{mins}m {secs:02d}s"
-
-    description = f"**{map_name}** • `{gamemode}` (Solo)\nMatch concluded in **`{time_str}`** with outcome **`{status_label}`**."
-
-    fields = [
-        {"name": "Wave Cleared", "value": f"`{wave_reached} / 20`", "inline": True},
-        {"name": "Coins Earned", "value": f"**`+{coins_earned:,}`**", "inline": True},
-        {"name": "XP Earned", "value": f"**`+{xp_earned:,}`**", "inline": True},
-        {"name": "Match Time", "value": f"`{time_str}`", "inline": True},
-        {"name": "Efficiency", "value": f"`{coins_per_hr:,.0f}` / hr", "inline": True},
-        {"name": "Session Balance", "value": f"`{total_coins:,}` coins", "inline": True},
-    ]
-
+    """Post a short match result: outcome, coins, time."""
+    won = outcome.lower() in ("victory", "triumph", "win")
     return send_discord_webhook(
         url,
-        title=title,
-        description=description,
-        color=color,
-        fields=fields,
+        title="Triumph" if won else "Defeat",
+        description=f"{map_name} · {gamemode} · Wave {wave_reached}/20",
+        color=GREEN if won else RED,
+        fields=[
+            _field("Coins", f"+{coins_earned:,}"),
+            _field("Time", _mmss(duration_s)),
+            _field("Per hour", f"{coins_per_hr:,.0f}"),
+        ],
     )
 
 
@@ -110,23 +93,16 @@ def send_error_webhook(
     *,
     task_name: str,
     error_message: str,
-    context: str = "Gameplay Loop",
+    context: str = "",
 ) -> tuple[bool, str]:
-    """Send an alert to Discord when the macro encounters a failure or exception."""
-    title = "SYSTEM ALERT — RUNTIME EXCEPTION"
-    description = f"The automation engine encountered an interruption during **{task_name}**."
-    fields = [
-        {"name": "Routine", "value": f"`{task_name}`", "inline": True},
-        {"name": "Context", "value": f"`{context}`", "inline": True},
-        {"name": "Action Taken", "value": "`Auto-recovering`", "inline": True},
-        {"name": "Diagnostic Log", "value": f"```python\n{error_message[:450]}\n```", "inline": False},
-    ]
+    """Post a short error notice. The macro keeps running and retries."""
+    msg = error_message.strip()[:300] or "Unknown error"
+    desc = f"{context}\n```{msg}```" if context else f"```{msg}```"
     return send_discord_webhook(
         url,
-        title=title,
-        description=description,
-        color=0xF59E0B,
-        fields=fields,
+        title="Error — retrying",
+        description=desc,
+        color=AMBER,
     )
 
 
@@ -140,28 +116,17 @@ def send_hourly_webhook(
     coins_per_hr: float,
     current_wave: Optional[int] = None,
 ) -> tuple[bool, str]:
-    """Send an hourly performance summary card to Discord."""
-    title = "HOURLY PERFORMANCE REPORT"
-    hours = max(1, int(session_duration_s // 3600))
-    time_str = f"{int(session_duration_s // 3600)}h {int((session_duration_s % 3600) // 60):02d}m"
-    losses = max(0, runs_completed - wins)
-    win_rate = f"{(wins / runs_completed * 100):.0f}%" if runs_completed else "—"
-    wave_str = f"Wave {current_wave}/20" if current_wave is not None else "In Lobby"
-
-    description = f"Autonomous session telemetry across the past **{hours} hour(s)**."
-
-    fields = [
-        {"name": "Session Time", "value": f"`{time_str}`", "inline": True},
-        {"name": "Matches", "value": f"`{runs_completed}` ({wins}W · {losses}L)", "inline": True},
-        {"name": "Win Rate", "value": f"**`{win_rate}`**", "inline": True},
-        {"name": "Total Farmed", "value": f"**`+{coins_farmed:,}`** coins", "inline": True},
-        {"name": "Pacing Rate", "value": f"**`{coins_per_hr:,.0f}`** / hr", "inline": True},
-        {"name": "Macro State", "value": f"`{wave_str}`", "inline": True},
-    ]
+    """Post a short session summary."""
+    h = int(session_duration_s // 3600)
+    m = int((session_duration_s % 3600) // 60)
     return send_discord_webhook(
         url,
-        title=title,
-        description=description,
-        color=0x38BDF8,
-        fields=fields,
+        title="Hourly summary",
+        description=f"Running for {h}h {m:02d}m",
+        color=NEUTRAL,
+        fields=[
+            _field("Coins", f"+{coins_farmed:,}"),
+            _field("Per hour", f"{coins_per_hr:,.0f}"),
+            _field("Wins", f"{wins} / {runs_completed}"),
+        ],
     )

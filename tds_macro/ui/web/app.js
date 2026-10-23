@@ -506,36 +506,6 @@ const MODIFIERS_CATALOG = [
     desc: "All towers and enemies suffer reduced max health and increased lethality.",
     supported: true,
   },
-  {
-    id: "faster_enemies",
-    name: "Faster Enemies",
-    short: "Swift",
-    multiplier: "+10% Coins",
-    multiplierVal: 0.10,
-    icon: "#i-zap",
-    desc: "All enemy units move 25% faster throughout all waves.",
-    supported: false,
-  },
-  {
-    id: "regen_enemies",
-    name: "Regenerating Enemies",
-    short: "Regen",
-    multiplier: "+6% Coins",
-    multiplierVal: 0.06,
-    icon: "#i-heart",
-    desc: "Enemies constantly regenerate a portion of their max health.",
-    supported: false,
-  },
-  {
-    id: "mystery_boss",
-    name: "Mystery Boss",
-    short: "Mystery",
-    multiplier: "+12% Coins",
-    multiplierVal: 0.12,
-    icon: "#i-skull",
-    desc: "The final wave features an unpredictable mutated boss encounter.",
-    supported: false,
-  },
 ];
 
 let selectedModifiers = ["Exploding Enemies", "Glass"];
@@ -599,7 +569,7 @@ function updateModModalStats() {
   const mult = (1 + totalBonus).toFixed(2);
 
   if ($("#mod-sum-count"))
-    $("#mod-sum-count").textContent = `${activeSupported.length} / ${supportedMods.length} SUPPORTED`;
+    $("#mod-sum-count").textContent = `${activeSupported.length} / ${supportedMods.length} SELECTED`;
   if ($("#mod-sum-bonus"))
     $("#mod-sum-bonus").textContent = `+${bonusPct}% COINS (${mult}x)`;
   if ($("#mod-foot-note"))
@@ -622,9 +592,7 @@ function renderModCatalog() {
       .filter(Boolean)
       .join(" ");
 
-    const statusBadge = m.supported
-      ? `<span class="mod-card-status ready">READY</span>`
-      : `<span class="mod-card-status soon">COMING SOON</span>`;
+    const statusBadge = "";
 
     return `
       <div class="${cls}" data-id="${m.id}" data-supported="${m.supported}">
@@ -669,11 +637,7 @@ $("#mod-catalog")?.addEventListener("click", (e) => {
   const card = e.target.closest(".mod-card");
   if (!card) return;
   const modId = card.dataset.id;
-  const isSupported = card.dataset.supported === "true";
-  if (!isSupported) {
-    toast("Modifier calibration pending in upcoming game update.");
-    return;
-  }
+  if (card.dataset.supported !== "true") return;
 
   const def = MODIFIERS_CATALOG.find((m) => m.id === modId);
   if (!def) return;
