@@ -605,7 +605,7 @@ def override_dead_ahead(m: Macro) -> None:
     frame = m.grab()
     m.snap("override_search", frame)
 
-    # 2. Click the Dead Ahead tile at Row 1 Col 1 (1045, 385)
+    # 2. Click the Dead Ahead tile at Row 1 Col 1 (1070, 395)
     tpl = vision.load_template("dead_ahead_tile.png")
     clicked_tile = False
     if tpl is not None:
@@ -622,8 +622,8 @@ def override_dead_ahead(m: Macro) -> None:
             clicked_tile = True
 
     if not clicked_tile:
-        m.log("clicking Dead Ahead tile at Row 1 Col 1 (1045, 385)", "cyan")
-        m.click_fixed(1045, 385)
+        m.log("clicking Dead Ahead tile at Row 1 Col 1 (1070, 395)", "cyan")
+        m.click_fixed(1070, 395)
         clicked_tile = True
 
     time.sleep(0.8)
@@ -631,20 +631,22 @@ def override_dead_ahead(m: Macro) -> None:
 
     # 3. Wait briefly for confirmation toast ("Map changed to Dead Ahead")
     try:
-        m.wait_for_text("map changed", timeout=2.5, fuzzy=0.72)
+        m.wait_for_text("map changed", timeout=2.0, fuzzy=0.72)
         m.log("map override confirmed ('Map changed to Dead Ahead')", "green")
     except MacroError:
         m.log("proceeding after Dead Ahead tile selection", "dim")
 
-    # 4. Close the Override Map modal by clicking off-menu (500, 700)
+    # 4. Close the Override Map modal: press ESC and/or click off-menu (500, 700)
+    inp.press("escape")
+    time.sleep(0.4)
     det = m.detect()
     if det.state == State.OVERRIDE:
         m.log("closing Override Map modal by clicking off-menu (500, 700)", "cyan")
         m.click_fixed(500, 700)
-        time.sleep(0.65)
+        time.sleep(0.5)
         if m.detect().state == State.OVERRIDE:
             close_modal(m)
-            time.sleep(0.6)
+            time.sleep(0.5)
 
 
 def walk_from_override_to_map_selector(m: Macro) -> None:
@@ -668,8 +670,9 @@ def walk_from_override_to_map_selector(m: Macro) -> None:
         close_modal(m)
         time.sleep(0.5)
 
-    # Closed-loop vision/OCR alignment: ensure we are centered on "Dead Ahead"
-    for _ in range(4):
+    # Closed-loop vision/OCR alignment and vote casting on Board 1
+    voted = False
+    for attempt in range(4):
         frame = m.grab()
         lines = m.ocr.recognize(frame, (80, 140, 2400, 860))
         da = find_line(lines, "dead ahead", fuzzy=0.72)
@@ -680,15 +683,32 @@ def walk_from_override_to_map_selector(m: Macro) -> None:
                 m.hold(["a"], 0.3)
             elif cx > 1150:
                 m.hold(["d"], 0.3)
-            m.hold(["w"], 0.5)
-            time.sleep(0.3)
-            m.log("Dead Ahead vote confirmed on Board 1!", "green")
+            m.hold(["w"], 0.4)
+            time.sleep(0.2)
+
+        # Cast the vote on Board 1 by holding E
+        m.log(f"casting vote on Board 1 Dead Ahead pad (holding E) [attempt {attempt+1}/4]", "bold green")
+        m.hold(["e"], 1.4)
+        time.sleep(0.5)
+
+        # Check if the timer started or vote registered
+        post_f = m.grab()
+        post_lines = m.ocr.recognize(post_f, (600, 80, 1360, 260))
+        post_t = " ".join(l.norm for l in post_lines)
+        if "time left" in post_t:
+            m.log("Dead Ahead map vote verified (countdown running)!", "bold green")
             m.snap("dead_ahead_voted")
-            return
+            voted = True
+            break
+
+        m.log("vote timer not started yet; stepping forward onto pad and retrying E", "yellow")
         m.hold(["w"], 0.35)
         time.sleep(0.2)
 
-    m.log("finished map selector walk; proceeding to Ready", "yellow")
+    if not voted:
+        m.log("final attempt: holding E on Board 1 pad", "yellow")
+        m.hold(["e"], 1.5)
+        time.sleep(0.4)
 
 
 def get_ready_region(frame: np.ndarray) -> tuple[int, int, int, int]:
@@ -797,25 +817,22 @@ def run_intermission(m: Macro) -> None:
         return
 
     ensure_facing_room(m)
-    existing_board = scan_boards_for_dead_ahead(m)
 
-    if existing_board is not None:
-        m.log(f"Dead Ahead is already in the pool on Board #{existing_board}; voting directly without override", "green")
-        vote_on_board_pad(m, existing_board)
-    else:
-        m.log("Dead Ahead is not in the pool; overriding via machine", "bold")
-        for attempt in range(2):
+    # Always override to Dead Ahead: Dead Ahead is an Insane difficulty map that never
+    # naturally appears in the 4 random intermission boards on Easy mode.
+    m.log("ensuring Dead Ahead is overridden on Board 1", "bold")
+    for attempt in range(2):
+        if m.detect().state in (State.GAMEPLAY_PREP, State.GAMEPLAY):
+            return
+        try:
+            walk_to_override_from_spawn(m)
+            override_dead_ahead(m)
+            walk_from_override_to_map_selector(m)
+            break
+        except Exception as exc:
+            m.log(f"override attempt {attempt+1} encountered ({exc}); retrying", "yellow")
             if m.detect().state in (State.GAMEPLAY_PREP, State.GAMEPLAY):
                 return
-            try:
-                walk_to_override_from_spawn(m)
-                override_dead_ahead(m)
-                walk_from_override_to_map_selector(m)
-                break
-            except Exception as exc:
-                m.log(f"override attempt {attempt+1} encountered ({exc}); retrying", "yellow")
-                if m.detect().state in (State.GAMEPLAY_PREP, State.GAMEPLAY):
-                    return
-                time.sleep(0.5)
+            time.sleep(0.5)
 
     ready_up(m)

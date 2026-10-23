@@ -389,12 +389,24 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
             return det.state
 
     # Map validation fail-safe: Dead Ahead on Easy always has exactly 100 Base Health.
-    # If another map accidentally started (e.g. Simplicity with 175 HP), abort immediately to return to Dead Ahead.
+    # If another map accidentally started (e.g. Simplicity/Cyber City with 175 HP), abort immediately to return to Dead Ahead.
     frame = m.grab()
-    lines = m.ocr.recognize(frame, (1000, 20, 560, 100))
+    lines = m.ocr.recognize(frame, (900, 10, 800, 120))
     health_text = " ".join(l.norm for l in lines)
-    if "175" in health_text:
-        m.log("WRONG MAP DETECTED (Base Health 175)! Aborting match immediately to return to Dead Ahead", "bold red")
+    is_wrong_map = False
+    if "175" in health_text or "150" in health_text:
+        is_wrong_map = True
+    elif "base health" in health_text and "100" not in health_text:
+        is_wrong_map = True
+
+    if is_wrong_map:
+        m.log(f"WRONG MAP DETECTED ({health_text})! Leaving match via Roblox menu to return to Dead Ahead", "bold red")
+        inp.press("escape")
+        time.sleep(0.4)
+        inp.press("l")
+        time.sleep(0.4)
+        inp.press("enter")
+        time.sleep(4.0)
         return State.DEFEAT
 
     slots = setup_camera_and_position(m)
