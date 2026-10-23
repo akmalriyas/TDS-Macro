@@ -229,6 +229,17 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, i
     return None
 
 
+def _is_tower_card_open(m: Macro) -> tuple[bool, bool]:
+    """Check if the tower selection panel is open on the left.
+    Returns (is_open, is_maxed)."""
+    frame = m.grab()
+    lines = m.ocr.recognize(frame, (40, 400, 380, 450))
+    text = " ".join(l.norm for l in lines)
+    is_open = any(k in text for k in ("scout", "stats", "first", "last", "strongest", "sell", "aiming", "barrel", "revolver", "upgrade"))
+    is_maxed = is_open and ("max level" in text or "maxed" in text)
+    return is_open, is_maxed
+
+
 def _upgrade_scout_at(m: Macro, scout: dict, presses: int = 1) -> bool:
     """Click a placed Scout to select it and trigger upgrade.
     Validates whether cash was consumed by the server before confirming success.
@@ -238,41 +249,58 @@ def _upgrade_scout_at(m: Macro, scout: dict, presses: int = 1) -> bool:
 
     coord = scout["coord"]
     m.touch()
-    cash_before = m.read_cash()
 
-    # Try clicking the base (dy=0), waist (dy=-15), torso (dy=-25), and head (dy=-35)
+    # Step 1: Click the tower mesh to open its upgrade card
+    card_opened = False
+    is_max = False
     for dy in (0, -15, -25, -35, 15):
-        # 1. Click tower to select
         inp.click(coord[0], coord[1] + dy, hold=0.04, settle=0.06)
-        time.sleep(0.08)
+        time.sleep(0.22)  # Wait for UI tween
+        card_opened, is_max = _is_tower_card_open(m)
+        if card_opened:
+            break
 
-        # 2. Trigger upgrades using BOTH the keybind ('e') AND screen buttons on the left card (y=390)
-        for _ in range(presses):
-            inp.click(120, 390, hold=0.04, settle=0.04)
-            inp.click(180, 390, hold=0.04, settle=0.04)
-            inp.click(220, 390, hold=0.04, settle=0.04)
-            m.press("e")
-            time.sleep(0.12)
-
-        time.sleep(0.20)  # Settle time for server replication
-        cash_after = m.read_cash()
-
-        # 3. Deselect/close panel with 'q'
+    # If already Level 4 MAX:
+    if is_max or scout.get("level", 0) >= 4:
+        scout["level"] = 4
+        scout["maxed"] = True
         m.press("q")
-        m.touch()
         time.sleep(0.04)
+        m.log(f"Scout at {coord} is ALREADY MAX LEVEL!", "bold green")
+        return True
 
-        # Verification: Did cash decrease?
-        if cash_before is not None and cash_after is not None and cash_after < cash_before:
-            delta = cash_before - cash_after
-            scout["level"] = scout.get("level", 0) + 1
-            if delta >= 1800 or scout["level"] >= 4:
-                scout["level"] = 4
-                scout["maxed"] = True
-                m.log(f"VERIFIED: Scout at {coord} REACHED LEVEL 4 MAX! (Spent ${delta}, cash remaining=${cash_after})", "bold green")
-            else:
-                m.log(f"VERIFIED: Scout at {coord} upgraded to Level {scout['level']} (Spent ${delta}, cash=${cash_after})", "green")
-            return True
+    # If the card did not open after all offsets:
+    if not card_opened:
+        m.log(f"Tower click at {coord} did not open selection card", "dim")
+        m.press("q")
+        return False
+
+    # Step 2: Trigger upgrade via screen button (196, 780) and keybind ('e')
+    cash_before = m.read_cash()
+    for _ in range(presses):
+        inp.click(196, 780, hold=0.04, settle=0.05)
+        m.press("e")
+        time.sleep(0.12)
+
+    time.sleep(0.35)  # Replication wait
+    cash_after = m.read_cash()
+
+    # Step 3: Deselect with 'q'
+    m.press("q")
+    m.touch()
+    time.sleep(0.05)
+
+    # Verification: Did cash decrease?
+    if cash_before is not None and cash_after is not None and cash_after < cash_before:
+        delta = cash_before - cash_after
+        scout["level"] = scout.get("level", 0) + 1
+        if delta >= 1800 or scout["level"] >= 4:
+            scout["level"] = 4
+            scout["maxed"] = True
+            m.log(f"VERIFIED: Scout at {coord} REACHED LEVEL 4 MAX! (Spent ${delta}, cash remaining=${cash_after})", "bold green")
+        else:
+            m.log(f"VERIFIED: Scout at {coord} upgraded to Level {scout['level']} (Spent ${delta}, cash=${cash_after})", "green")
+        return True
 
     m.log(f"Upgrade at {coord} unconfirmed (${cash_before} -> {cash_after})", "dim")
     return False
