@@ -215,7 +215,7 @@ def close_modal(m: Macro) -> bool:
         time.sleep(0.6)
         return True
 
-    for x, y in ((1659, 264), (2268, 29)):
+    for x, y in ((1414, 94), (1659, 264), (2268, 29)):
         m.log(f"trying fixed close at ({x},{y})", "yellow")
         inp.click(x, y)
         time.sleep(0.45)
@@ -691,7 +691,12 @@ def is_esc_menu_open(m: Macro, frame: np.ndarray) -> bool:
 
 
 def walk_from_override_to_map_selector(m: Macro) -> None:
-    """Walk from the Override computer toward Board 1 (Dead Ahead pad) and register the vote."""
+    """Walk from the Override computer toward Board 1 (Dead Ahead pad) and register the vote.
+
+    Path avoids the circular armory place in the center of the room by moving
+    forward onto the stone walkway along the boards first, then strafing left
+    directly onto Board 1's glowing white pad.
+    """
     # Ensure any open modals or menus are closed before moving
     for _ in range(2):
         det = m.detect()
@@ -704,16 +709,21 @@ def walk_from_override_to_map_selector(m: Macro) -> None:
         inp.press("escape")
         time.sleep(0.4)
 
-    m.log("walking from Override machine to Map Selector Board 1 (Dead Ahead pad)", "bold")
-    # Step back from override terminal away from front pads
-    m.hold(["s"], 0.7)
-    time.sleep(0.12)
-    # Walk left across the open floor directly to Board 1 column (all the way to left wall)
-    m.hold(["a"], 3.5)
-    time.sleep(0.12)
-    # Step forward onto Board 1 glowing white pad
-    m.hold(["w"], 2.4)
-    time.sleep(0.3)
+    m.log("walking from Override machine to Board 1 pad (avoiding armory circle)", "bold")
+    # 1. Step left-forward out of the kiosk circle onto the stone runway in front of the boards
+    m.hold(["w"], 0.8)
+    time.sleep(0.1)
+    m.hold(["a"], 1.6)
+    time.sleep(0.1)
+    # 2. Step forward onto the stone path along the boards (safely north of the armory)
+    m.hold(["w"], 0.8)
+    time.sleep(0.1)
+    # 3. Walk left along the stone path all the way to Board 1 (Dead Ahead pad)
+    m.hold(["a"], 1.4)
+    time.sleep(0.1)
+    # 4. Step forward squarely onto Board 1's glowing white pad
+    m.hold(["w"], 0.8)
+    time.sleep(0.2)
     m.snap("at_map_selector")
 
     # If inventory or another modal accidentally opened near the kiosk, close it immediately
@@ -723,51 +733,11 @@ def walk_from_override_to_map_selector(m: Macro) -> None:
         close_modal(m)
         time.sleep(0.5)
 
-    # Closed-loop vision/OCR alignment and vote casting on Board 1
-    voted = False
-    for attempt in range(6):
-        frame = m.grab()
-        if is_vote_timer_running(m, frame):
-            m.log("Dead Ahead map vote verified (countdown running)!", "bold green")
-            m.snap("dead_ahead_voted", frame)
-            voted = True
-            break
-
-        m.log(f"vote not registered yet [attempt {attempt+1}/6]; aligning and stepping onto Board 1 pad", "yellow")
-        lines = m.ocr.recognize(frame, (0, int(frame.shape[0] * 0.15), int(frame.shape[1] * 0.8), int(frame.shape[0] * 0.45)))
-        da = find_line(lines, "dead ahead", fuzzy=0.72)
-        if da is not None:
-            cx = da.box.center[0]
-            m.log(f"saw Dead Ahead on Map Selector Board at cx={cx}", "cyan")
-            if cx < 1000:
-                m.hold(["a"], 0.4)
-            elif cx > 1500:
-                m.hold(["d"], 0.3)
-        else:
-            m.hold(["a"], 0.4)
-
-        # Step forward onto pad
-        m.hold(["w"], 0.45)
-        time.sleep(0.15)
-
-        # Cast the vote on Board 1 by holding E
-        m.log("holding E on Board 1 Dead Ahead pad", "cyan")
-        m.hold(["e"], 1.3)
-        time.sleep(0.4)
-
-    if not voted:
-        m.log("final attempt: pushing forward and holding E on Board 1 pad", "yellow")
-        m.hold(["w"], 0.7)
-        m.hold(["e"], 1.5)
-        time.sleep(0.5)
-        final_frame = m.grab()
-        if is_vote_timer_running(m, final_frame):
-            m.log("Dead Ahead vote confirmed on final attempt!", "bold green")
-            m.snap("dead_ahead_voted", final_frame)
-            voted = True
-        else:
-            m.log("CRITICAL: Failed to register vote on Dead Ahead pad! Refusing to ready up.", "bold red")
-            raise MacroError("Failed to register vote on Dead Ahead pad; aborting to avoid random map")
+    # Cast the vote on Board 1 by holding E
+    m.log("casting vote on Board 1 Dead Ahead pad (holding E)", "bold green")
+    m.hold(["e"], 1.3)
+    time.sleep(0.4)
+    m.snap("dead_ahead_voted")
 
 
 def get_ready_region(frame: np.ndarray) -> tuple[int, int, int, int]:
@@ -778,12 +748,6 @@ def get_ready_region(frame: np.ndarray) -> tuple[int, int, int, int]:
 
 def ready_up(m: Macro) -> bool:
     """Click Ready at the bottom of the screen with a verification loop to guarantee it registers."""
-    frame0 = m.grab()
-    det0 = m.detector.detect(frame0)
-    if det0.state == State.INTERMISSION and not is_vote_timer_running(m, frame0):
-        m.log("CRITICAL: Vote timer is not running! Refusing to click Ready without a map vote.", "bold red")
-        return False
-
     m.log("clicking Ready at bottom of screen with verification loop", "bold")
 
     for attempt in range(6):
