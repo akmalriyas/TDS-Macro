@@ -32,6 +32,9 @@ class Macro:
         self.ocr = OCR()
         self.detector = StateDetector(self.ocr)
         self.window_info = window.find_window()
+        if self.window_info:
+            from . import viewport
+            viewport.set_from_hwnd(self.window_info.hwnd)
         self._snap_count = 0
         self._last_input = time.time()
         self.scout_checked: bool = False
@@ -110,6 +113,8 @@ class Macro:
         if info is None:
             raise MacroError("Roblox window not found")
         self.window_info = info
+        from . import viewport
+        viewport.set_from_hwnd(info.hwnd)
         time.sleep(0.08)
 
     def grab(self) -> np.ndarray:

@@ -72,6 +72,7 @@
       <svg class="brand-logo" viewBox="0 0 32 32"><use href="#i-flare"/></svg>
       <span class="brand-name">Flare Macro - TDS</span>
       <span class="ver">v1.0.0</span>
+      <button type="button" class="update-badge" id="update-badge" hidden style="margin-left:8px"><svg class="ico" style="width:11px;height:11px"><use href="#i-zap"/></svg><span id="update-badge-text">UPDATE</span></button>
     </div>
     <div class="wc">
       <button class="wc-btn" id="wc-min" aria-label="Minimize"><svg class="ico"><use href="#i-min"/></svg></button>
@@ -93,6 +94,7 @@
       <button class="rail-btn" data-view="live" title="Live monitor"><svg class="ico"><use href="#i-monitor"/></svg></button>
       <button class="rail-btn" data-view="analytics" title="Analytics"><svg class="ico"><use href="#i-chart"/></svg></button>
       <div class="grow"></div>
+      <button class="rail-btn" data-view="setup" title="Setup & Diagnostics"><svg class="ico"><use href="#i-shield"/></svg></button>
       <button class="rail-btn" data-view="settings" title="Settings"><svg class="ico"><use href="#i-sliders"/></svg></button>
     </aside>
 
@@ -257,6 +259,14 @@
             <div class="row-text"><b>Reset queue progress</b><span>Marks every task in queue as not started and zeroes run counters.</span></div>
             <button class="btn cut sm" id="reset-progress">RESET</button>
           </div>
+          <div class="row">
+            <div class="row-text"><b>System Diagnostics & Setup</b><span>Verify prerequisites, display scaling, Windows OCR pack, and capture pipeline.</span></div>
+            <button class="btn cut sm" id="btn-open-setup">RUN DIAGNOSTICS</button>
+          </div>
+          <div class="row">
+            <div class="row-text"><b>Check for Updates</b><span>Query GitHub for major releases and software updates.</span></div>
+            <button class="btn cut sm" id="btn-check-updates">CHECK NOW</button>
+          </div>
         </div>
         <h2 class="group">HOTKEY CONFIGURATION</h2>
         <div class="panel hk-grid">
@@ -307,6 +317,31 @@
         </div>
         <div class="love-credit">
           <span>Made with <i class="heart">♥</i> by Akmal Riyas</span>
+        </div>
+      </section>
+
+      <!-- SETUP & DIAGNOSTICS -->
+      <section class="view" data-view="setup" hidden>
+        <div class="view-head">
+          <div>
+            <h1>SYSTEM SETUP & DIAGNOSTICS</h1>
+            <p class="sub">PREREQUISITE VERIFICATION & ENVIRONMENT READINESS</p>
+          </div>
+        </div>
+        <div class="rule"></div>
+        <div class="setup-banner" id="setup-banner">
+          <div class="setup-banner-text">
+            <b id="setup-banner-title">CHECKING PREREQUISITES...</b>
+            <span id="setup-banner-sub">Scanning environment components and Roblox readiness</span>
+          </div>
+          <button type="button" class="btn cut sm" id="setup-btn-recheck">RE-SCAN</button>
+        </div>
+        <h2 class="group">SYSTEM VALIDATION CHECKLIST</h2>
+        <div class="setup-list" id="setup-list"></div>
+        <div class="modal-actions" style="margin-top:20px">
+          <span style="font-size:11.5px;color:var(--muted)" id="setup-foot-note">All critical checks must pass before running the autonomous macro</span>
+          <div class="grow"></div>
+          <button type="button" class="btn cut primary" id="setup-btn-continue" disabled>COMPLETE SETUP & CONTINUE</button>
         </div>
       </section>
     </main>
@@ -423,6 +458,27 @@
       <button type="submit" class="btn cut sm primary">SAVE</button>
     </div>
   </form>
+</div>
+
+<!-- Software Update Modal -->
+<div class="scrim" id="update-modal-scrim" hidden>
+  <div class="modal cut" role="dialog" aria-modal="true" style="max-width:540px">
+    <div class="view-head">
+      <div>
+        <div class="modal-brand-tag" id="update-modal-tag">SOFTWARE UPDATE</div>
+        <h3 id="update-modal-title">UPDATE AVAILABLE</h3>
+        <p class="sub" id="update-modal-sub">A newer version has been detected on GitHub Releases</p>
+      </div>
+      <button type="button" class="icon-btn" id="update-modal-close" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="rule"></div>
+    <div class="update-notes-box" id="update-notes-content"></div>
+    <div class="modal-actions" style="margin-top:16px">
+      <div class="grow"></div>
+      <button type="button" class="btn cut sm" id="update-btn-dismiss">REMIND LATER</button>
+      <button type="button" class="btn cut sm primary" id="update-btn-download">DOWNLOAD & UPDATE</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>

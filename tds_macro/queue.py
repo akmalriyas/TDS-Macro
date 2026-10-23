@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .config import LOGS
+from .paths import QUEUE_FILE
 
 # Presets the engine can actually run end to end. Add an entry here once a new flow exists.
 PRESETS: dict[str, dict] = {
@@ -64,7 +64,7 @@ class QueueTask:
 
 class TaskQueue:
     def __init__(self, path: Optional[Path] = None) -> None:
-        self.path = path or (LOGS / "queue.json")
+        self.path = path or QUEUE_FILE
         self.tasks: list[QueueTask] = []
         self.load()
 

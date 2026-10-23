@@ -103,7 +103,14 @@ def focus_window(info: Optional[WindowInfo] = None, topmost: bool = True) -> Opt
         time.sleep(0.05)
         user32.SetForegroundWindow(hwnd)
     time.sleep(0.15)
-    return find_window()
+    win = find_window()
+    if win:
+        try:
+            from . import viewport
+            viewport.set_from_hwnd(win.hwnd)
+        except Exception:
+            pass
+    return win
 
 
 def open_url(url: str = GAME_URL) -> None:

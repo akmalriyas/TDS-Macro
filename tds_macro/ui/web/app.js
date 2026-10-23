@@ -32,6 +32,7 @@ function switchView(name) {
   $("#stage").scrollTop = 0;
   if (name === "analytics") loadAnalytics();
   if (name === "live") { renderLive(); loadLog(); }
+  if (name === "setup") runSetupDiagnostics();
 }
 // Attach navigation listeners ONLY to the tab and rail buttons, NOT to section.view containers
 $$(".tab[data-view], .rail-btn[data-view]").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
@@ -785,6 +786,153 @@ $("#wc-min").addEventListener("click", () => api.win_minimize());
 $("#wc-max").addEventListener("click", () => api.win_maximize());
 $("#wc-close").addEventListener("click", () => api.win_close());
 
+/* ----------------------------------------------------- setup & diagnostics */
+async function runSetupDiagnostics() {
+  const bannerTitle = $("#setup-banner-title");
+  const bannerSub = $("#setup-banner-sub");
+  const listEl = $("#setup-list");
+  const continueBtn = $("#setup-btn-continue");
+
+  if (!bannerTitle || !listEl) return;
+
+  bannerTitle.textContent = "SCANNING ENVIRONMENT...";
+  bannerTitle.style.color = "";
+  bannerSub.textContent = "Testing Windows components, OCR pack, display scaling, and capture pipeline";
+  listEl.innerHTML = `<div class="empty">Running diagnostics...</div>`;
+  if (continueBtn) continueBtn.disabled = true;
+
+  try {
+    const res = await api.check_requirements();
+    const checks = res.checks || [];
+
+    if (res.critical_passed) {
+      bannerTitle.textContent = "ENVIRONMENT READY";
+      bannerTitle.style.color = "var(--ok)";
+      bannerSub.textContent = "All critical system prerequisites verified successfully.";
+      if (continueBtn) continueBtn.disabled = false;
+    } else {
+      bannerTitle.textContent = "ACTION REQUIRED";
+      bannerTitle.style.color = "var(--accent)";
+      bannerSub.textContent = "One or more critical prerequisites must be resolved.";
+      if (continueBtn) continueBtn.disabled = true;
+    }
+
+    listEl.innerHTML = checks.map((c) => {
+      const dotCls = c.passed ? "pass" : (c.critical ? "fail" : "warn");
+      const badgeCls = c.passed ? "pass" : (c.critical ? "fail" : "warn");
+      const fixBtn = c.fix_action ? `<button type="button" class="btn cut xs primary" data-fix="${c.fix_action}">${esc(c.fix_label || "Fix")}</button>` : "";
+      return `
+        <div class="setup-item">
+          <div class="setup-item-main">
+            <i class="setup-item-dot ${dotCls}"></i>
+            <div class="setup-item-text">
+              <b>${esc(c.name)}</b>
+              <span>${esc(c.detail)}</span>
+            </div>
+          </div>
+          <div class="setup-item-actions">
+            ${fixBtn}
+            <span class="setup-badge ${badgeCls}">${esc(c.status)}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (e) {
+    bannerTitle.textContent = "DIAGNOSTIC ERROR";
+    bannerSub.textContent = String(e);
+  }
+}
+
+$("#setup-btn-recheck")?.addEventListener("click", runSetupDiagnostics);
+$("#setup-list")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-fix]");
+  if (!btn) return;
+  const action = btn.dataset.fix;
+  btn.disabled = true;
+  btn.textContent = "Working...";
+  const r = await api.fix_requirement(action);
+  toast(r.message || "Action executed");
+  setTimeout(runSetupDiagnostics, 2500);
+});
+
+$("#setup-btn-continue")?.addEventListener("click", async () => {
+  await api.mark_setup_complete();
+  toast("Setup verified and saved!");
+  switchView("queue");
+});
+
+$("#btn-open-setup")?.addEventListener("click", () => switchView("setup"));
+
+/* ---------------------------------------------------------------- updates */
+let pendingUpdate = null;
+
+function showUpdateModal(u) {
+  pendingUpdate = u;
+  const scrim = $("#update-modal-scrim");
+  if (!scrim) return;
+
+  $("#update-modal-tag").textContent = u.is_major ? "MAJOR SOFTWARE UPDATE" : "SOFTWARE UPDATE";
+  $("#update-modal-title").textContent = `v${u.latest_version} AVAILABLE`;
+  $("#update-modal-sub").textContent = u.title || `Release ${u.tag}`;
+  $("#update-notes-content").textContent = u.notes || "No release notes available.";
+  scrim.hidden = false;
+}
+
+$("#update-modal-close")?.addEventListener("click", () => {
+  $("#update-modal-scrim").hidden = true;
+});
+$("#update-btn-dismiss")?.addEventListener("click", () => {
+  $("#update-modal-scrim").hidden = true;
+});
+
+$("#update-btn-download")?.addEventListener("click", async () => {
+  if (!pendingUpdate || !pendingUpdate.download_url) return;
+  const btn = $("#update-btn-download");
+  btn.disabled = true;
+  btn.textContent = "DOWNLOADING...";
+  try {
+    const res = await api.download_update(pendingUpdate.download_url);
+    if (res.ok) {
+      toast("Update downloaded! Opening installer...");
+      $("#update-modal-scrim").hidden = true;
+    } else {
+      toast("Download failed: " + (res.error || "Unknown"));
+    }
+  } catch (e) {
+    toast("Download error: " + e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "DOWNLOAD & UPDATE";
+  }
+});
+
+async function checkForUpdates(manual = false) {
+  try {
+    const res = await api.check_updates();
+    if (!res || !res.update_available) {
+      if (manual) toast("Flare Macro is up to date!");
+      return;
+    }
+
+    // Show badge in titlebar
+    const badge = $("#update-badge");
+    const badgeText = $("#update-badge-text");
+    if (badge && badgeText) {
+      badgeText.textContent = `v${res.latest_version}`;
+      badge.hidden = false;
+      badge.onclick = () => showUpdateModal(res);
+    }
+
+    if (res.is_major || manual) {
+      showUpdateModal(res);
+    }
+  } catch (e) {
+    if (manual) toast("Failed to check for updates: " + e);
+  }
+}
+
+$("#btn-check-updates")?.addEventListener("click", () => checkForUpdates(true));
+
 /* ------------------------------------------------------------------ loop */
 async function refresh() {
   state = await api.get_state();
@@ -802,6 +950,17 @@ window.addEventListener("pywebviewready", async () => {
   presets = await api.presets();
   await loadSettings();
   await refresh();
-  switchView("queue");
+
+  // First-launch detection
+  const setupDone = await api.is_setup_complete();
+  if (!setupDone) {
+    switchView("setup");
+  } else {
+    switchView("queue");
+  }
+
   tick();
+
+  // Background check for GitHub updates
+  setTimeout(checkForUpdates, 3000);
 });

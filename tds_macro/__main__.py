@@ -68,6 +68,10 @@ def cmd_doctor(_args) -> int:
     else:
         table.add_row("Roblox window", "MISSING", "will launch on run")
 
+    from . import viewport
+    vp_stat = viewport.status()
+    table.add_row("Resolution & Scaling", vp_stat["level"].upper(), vp_stat["message"])
+
     table.add_row("Assets", "OK" if any((Path(__file__).parent / "assets").iterdir()) else "EMPTY", str(Path(__file__).parent / "assets"))
     console.print(table)
     return 0
@@ -251,6 +255,11 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("ui", help="launch the dark Control Panel UI and HUD overlay")
     p.set_defaults(func=cmd_ui)
+
+    if argv is None:
+        argv = sys.argv[1:]
+    if not argv:
+        argv = ["ui"]
 
     args = parser.parse_args(argv)
     return args.func(args)

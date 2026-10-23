@@ -98,8 +98,15 @@ def cursor_pos() -> tuple[int, int]:
     return p.x, p.y
 
 
-def move_to(x: int, y: int, jiggle: int = CLICK_JIGGLE) -> None:
-    """Move the OS cursor to a physical pixel position and wake Roblox's cursor."""
+def move_to(x: int | float, y: int | float, jiggle: int = CLICK_JIGGLE, raw: bool = False) -> None:
+    """Move the OS cursor to a physical pixel position and wake Roblox's cursor.
+
+    Unless raw=True, (x, y) is treated as a reference coordinate (2560x1440 space)
+    and translated to physical client screen pixels via viewport.to_screen.
+    """
+    if not raw:
+        from . import viewport
+        x, y = viewport.to_screen(x, y)
     x, y = int(round(x)), int(round(y))
     user32.SetCursorPos(x, y)
     time.sleep(0.05)
@@ -155,11 +162,14 @@ def wheel(clicks: int, x: int | None = None, y: int | None = None) -> None:
 
 def drag(x1: int, y1: int, x2: int, y2: int, button: str = "left", steps: int = 24, duration: float = 0.35) -> None:
     """Drag with relative movement, useful for camera rotation and carousels."""
-    move_to(x1, y1)
+    from . import viewport
+    sx1, sy1 = viewport.to_screen(x1, y1)
+    sx2, sy2 = viewport.to_screen(x2, y2)
+    move_to(sx1, sy1, raw=True)
     time.sleep(0.05)
     mouse_down(button)
     time.sleep(0.05)
-    dx, dy = x2 - x1, y2 - y1
+    dx, dy = sx2 - sx1, sy2 - sy1
     step_delay = duration / max(1, steps)
     for i in range(1, steps + 1):
         move_rel(round(dx / steps), round(dy / steps))

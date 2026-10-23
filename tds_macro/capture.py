@@ -142,10 +142,15 @@ class Capture:
         if target_hwnd:
             win_frame = grab_window(target_hwnd)
             if win_frame is not None:
-                _LAST_FRAMES[self.output_idx] = win_frame
-                return win_frame
+                from . import viewport
+                viewport.set_from_hwnd(target_hwnd)
+                norm = viewport.normalize_frame(win_frame)
+                _LAST_FRAMES[self.output_idx] = norm
+                return norm
 
         # 2. Desktop fallback via DXGI Desktop Duplication
+        from . import viewport
+
         for _ in range(retries):
             try:
                 frame = self.camera.grab()
@@ -154,8 +159,14 @@ class Capture:
             if frame is not None:
                 # dxcam returns RGB; OpenCV uses BGR.
                 bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                _LAST_FRAMES[self.output_idx] = bgr
-                return bgr
+                if target_hwnd:
+                    vp = viewport.client_viewport(target_hwnd)
+                    if vp and 0 <= vp.left and 0 <= vp.top and vp.left + vp.width <= bgr.shape[1] and vp.top + vp.height <= bgr.shape[0]:
+                        bgr = bgr[vp.top:vp.top + vp.height, vp.left:vp.left + vp.width]
+                        viewport.set_viewport(vp)
+                norm = viewport.normalize_frame(bgr)
+                _LAST_FRAMES[self.output_idx] = norm
+                return norm
             time.sleep(0.02)
         # If the screen is completely static, DXGI Desktop Duplication returns None;
         # return the last cached frame if available before recreating the device.
@@ -168,8 +179,14 @@ class Capture:
         if frame is None:
             raise RuntimeError("screen capture returned no frame")
         bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        _LAST_FRAMES[self.output_idx] = bgr
-        return bgr
+        if target_hwnd:
+            vp = viewport.client_viewport(target_hwnd)
+            if vp and 0 <= vp.left and 0 <= vp.top and vp.left + vp.width <= bgr.shape[1] and vp.top + vp.height <= bgr.shape[0]:
+                bgr = bgr[vp.top:vp.top + vp.height, vp.left:vp.left + vp.width]
+                viewport.set_viewport(vp)
+        norm = viewport.normalize_frame(bgr)
+        _LAST_FRAMES[self.output_idx] = norm
+        return norm
 
     def grab_pil(self):
         from PIL import Image

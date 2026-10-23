@@ -8,15 +8,16 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from .. import __version__
 from ..config import LOGS, RunSettings
 from ..core import Macro
 from ..flows import runloop
 from ..queue import PRESETS, QueueTask, TaskQueue
+from ..paths import SETTINGS_FILE
 from ..runlog import RunLog
 from ..watchdog import HotkeyWatchdog, release_all_game_keys
 from ..webhook import send_discord_webhook
 
-SETTINGS_FILE = LOGS / "ui_settings.json"
 PERSISTED = ("webhook_url", "webhook_on_triumph", "webhook_on_defeat", "webhook_on_error", "webhook_hourly", "use_play_again", "verify_scout_once", "battlepass_farm", "enable_modifiers", "modifiers", "minimize_on_start", "show_hud", "hotkey_start", "hotkey_pause", "hotkey_stop", "hotkey_overlay")
 
 
@@ -344,6 +345,7 @@ class Core:
             "game_state": m.current_state.value if m else None,
             "tasks": [self._task_view(t) for t in self.queue.tasks],
             "webhook": bool(self.settings.webhook_url),
+            "version": __version__,
             "hotkeys": {
                 "start": self.settings.hotkey_start,
                 "pause": self.settings.hotkey_pause,
@@ -396,6 +398,35 @@ class Core:
             os.startfile(str(LOGS))  # noqa: S606
         except Exception:
             pass
+
+    # ------------------------------------------------------------- validation & updates
+    def check_requirements(self) -> dict:
+        from .. import validator
+        return validator.check_all()
+
+    def fix_requirement(self, action_id: str) -> dict:
+        from .. import validator
+        return validator.fix_requirement(action_id)
+
+    def is_setup_complete(self) -> bool:
+        from .. import validator
+        return validator.is_setup_completed()
+
+    def mark_setup_complete(self) -> None:
+        from .. import validator
+        validator.mark_setup_completed()
+
+    def check_updates(self) -> dict:
+        from .. import updater
+        return updater.check_for_updates()
+
+    def download_update(self, url: str) -> dict:
+        from .. import updater
+        try:
+            path = updater.download_update(url)
+            return {"ok": True, "path": str(path)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     # ----------------------------------------------------------------- window
     def shutdown(self) -> None:

@@ -14,7 +14,7 @@ import win32gui
 from ..config import RunSettings, ensure_dpi_aware
 from .backend import Core
 
-WEB_DIR = Path(__file__).parent / "web"
+from ..paths import WEB_DIR
 
 
 class Api:
@@ -87,6 +87,24 @@ class Api:
     def open_logs(self) -> None:
         self._core.open_logs()
 
+    def check_requirements(self) -> dict:
+        return self._core.check_requirements()
+
+    def fix_requirement(self, action_id: str) -> dict:
+        return self._core.fix_requirement(action_id)
+
+    def is_setup_complete(self) -> bool:
+        return self._core.is_setup_complete()
+
+    def mark_setup_complete(self) -> None:
+        self._core.mark_setup_complete()
+
+    def check_updates(self) -> dict:
+        return self._core.check_updates()
+
+    def download_update(self, url: str) -> dict:
+        return self._core.download_update(url)
+
     # window chrome
     def win_minimize(self) -> None:
         self._window.minimize()
@@ -130,6 +148,16 @@ def _setup_hud_clickthrough() -> None:
 
 def launch_ui(settings: Optional[RunSettings] = None) -> int:
     ensure_dpi_aware()
+    # Single-instance check
+    kernel32 = ctypes.windll.kernel32
+    user32 = ctypes.windll.user32
+    mutex = kernel32.CreateMutexW(None, False, 'Global\\FlareMacro_SingleInstance_App')
+    if kernel32.GetLastError() == 183:
+        existing = user32.FindWindowW(None, 'Flare Macro - TDS')
+        if existing:
+            user32.ShowWindow(existing, 9)
+            user32.SetForegroundWindow(existing)
+        return 0
     api = Api()
 
     # Calculate HUD position in top-right corner below Roblox title bar

@@ -6,12 +6,14 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-ASSETS = ROOT / "tds_macro" / "assets"
-LOGS = ROOT / "logs"
-TEMP = Path(os.environ.get("TEMP", str(ROOT / "tmp"))) / "tds_macro"
-for _p in (ASSETS, LOGS, TEMP):
-    _p.mkdir(parents=True, exist_ok=True)
+from .paths import (
+    ASSETS_DIR as ASSETS,
+    DATA_DIR,
+    LOGS_DIR as LOGS,
+    ROOT_DIR as ROOT,
+    SETTINGS_FILE,
+    TEMP_DIR as TEMP,
+)
 
 PLACE_ID = 3260590327
 GAME_URL = f"roblox://experiences/start?placeId={PLACE_ID}"
@@ -99,9 +101,9 @@ class RunSettings:
     debug_every_step: bool = False
 
     def load_persisted(self) -> RunSettings:
-        """Load user-configured settings from logs/ui_settings.json if present."""
+        """Load user-configured settings from ui_settings.json if present."""
         import json
-        settings_file = LOGS / "ui_settings.json"
+        settings_file = SETTINGS_FILE
         if settings_file.is_file():
             try:
                 data = json.loads(settings_file.read_text(encoding="utf-8"))
