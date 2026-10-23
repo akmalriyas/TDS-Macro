@@ -1,0 +1,62 @@
+name: Release Flare Macro
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release Version (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pillow
+
+      - name: Generate Icon
+        run: |
+          python -c "from PIL import Image; img = Image.open('tds_macro/assets/app_icon.png'); img.save('tds_macro/assets/app_icon.ico', format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])"
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --noconfirm --clean flare.spec
+
+      - name: Create Portable Zip
+        run: |
+          Compress-Archive -Path dist/FlareMacro/* -DestinationPath dist/FlareMacro-Portable.zip
+
+      - name: Install Inno Setup
+        uses: chinstrap/action-inno-setup@v1
+        with:
+          filepath: installer.iss
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/FlareMacro-Portable.zip
+            Output/FlareSetup.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false

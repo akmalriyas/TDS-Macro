@@ -7,11 +7,17 @@ import sys
 from pathlib import Path
 
 # When frozen by PyInstaller, sys._MEIPASS holds the bundled resources
-IS_FROZEN = getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
+IS_FROZEN = getattr(sys, "frozen", False)
 
 if IS_FROZEN:
-    PACKAGE_DIR = Path(sys._MEIPASS) / "tds_macro"
-    ROOT_DIR = Path(sys._MEIPASS)
+    base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    if (base / "tds_macro" / "assets").exists():
+        PACKAGE_DIR = base / "tds_macro"
+    elif (base / "assets").exists():
+        PACKAGE_DIR = base
+    else:
+        PACKAGE_DIR = base / "tds_macro"
+    ROOT_DIR = base
 else:
     PACKAGE_DIR = Path(__file__).resolve().parent
     ROOT_DIR = PACKAGE_DIR.parent
