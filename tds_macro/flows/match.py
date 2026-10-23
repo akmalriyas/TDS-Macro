@@ -407,7 +407,9 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
         time.sleep(0.4)
         inp.press("enter")
         time.sleep(4.0)
-        return State.DEFEAT
+        if record is not None:
+            record.result = "aborted_wrong_map"
+        return State.LOBBY
 
     slots = setup_camera_and_position(m)
     failed_slots: set[int] = set()
@@ -620,13 +622,21 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
 
 def parse_results_and_continue(m: Macro, record: Optional[RunRecord] = None) -> dict:
     """OCR the Victory/Defeat screen (refs/222652.png), update RunRecord, and click Play Again."""
+    det = m.detect()
+    if det.state == State.LOBBY:
+        m.log("already in lobby; skipping results screen parse", "dim")
+        if record is not None and record.result == "running":
+            record.result = "defeat"
+        return {"outcome": "defeat", "coins_earned": 0, "gems_earned": 0, "xp_earned": 0, "wave_reached": 0, "match_time_s": 0}
+
     frame = m.grab()
     m.snap("match_results", frame)
     lines = m.ocr.recognize(frame)
     full_text = " ".join(l.norm for l in lines)
     m.log(f"results screen OCR: {full_text[:260]}", "dim")
 
-    outcome = "victory" if ("triumph" in full_text or "victory" in full_text) else "defeat"
+    is_defeat = "you lost" in full_text or "we have to fall back" in full_text or "defeat" in full_text
+    is_victory = "triumph" in full_text or "victory" in full_text
     coins_earned: Optional[int] = None
     gems_earned: Optional[int] = None
     xp_earned: Optional[int] = None
@@ -660,9 +670,10 @@ def parse_results_and_continue(m: Macro, record: Optional[RunRecord] = None) -> 
                 if wv is not None and 1 <= wv <= 50:
                     wave_reached = wv
 
-    is_defeat = "you lost" in full_text or "we have to fall back" in full_text or "defeat" in full_text
-    is_victory = "triumph" in full_text or "victory" in full_text or (wave_reached is not None and wave_reached >= 20)
-    outcome = "defeat" if (is_defeat and not is_victory) else "victory"
+    if wave_reached is not None and wave_reached >= 20:
+        is_victory = True
+
+    outcome = "victory" if (is_victory and not is_defeat) else "defeat"
 
     if coins_earned is None and outcome == "victory":
         coins_earned = 450
