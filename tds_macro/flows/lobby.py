@@ -289,7 +289,9 @@ def check_scout(m: Macro, force: bool = False) -> dict:
             status["golden"] = frac2 > 0.15
             m.log(f"golden badge after click: {frac2:.3f}", "dim")
 
-    # Close inventory: red X at top-right (same place as most TDS modals).
+    # Close inventory: click the red X at (1414, 94) directly.
+    m.click_fixed(1414, 94)
+    time.sleep(0.4)
     if not close_modal(m):
         m.log("could not find inventory close button", "red")
     time.sleep(0.8)
