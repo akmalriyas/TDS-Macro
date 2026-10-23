@@ -662,10 +662,10 @@ def walk_from_override_to_map_selector(m: Macro) -> None:
     m.hold(["s"], 0.8)
     time.sleep(0.12)
     # Walk left across the open floor directly to Board 1 column
-    m.hold(["a"], 2.4)
+    m.hold(["a"], 2.2)
     time.sleep(0.12)
     # Step forward onto Board 1 pad
-    m.hold(["w"], 1.3)
+    m.hold(["w"], 1.7)
     time.sleep(0.3)
     m.snap("at_map_selector")
 
@@ -677,23 +677,23 @@ def walk_from_override_to_map_selector(m: Macro) -> None:
         time.sleep(0.5)
 
     # Closed-loop vision/OCR alignment: ensure we are centered on "Dead Ahead"
-    for _ in range(3):
+    for _ in range(4):
         frame = m.grab()
         lines = m.ocr.recognize(frame, (80, 140, 2400, 860))
         da = find_line(lines, "dead ahead", fuzzy=0.72)
         if da is not None:
             cx, cy = da.box.center
             m.log(f"saw Dead Ahead on Map Selector Board at ({cx},{cy})", "cyan")
-            if cx < 1000:
-                m.hold(["a"], 0.35)
-            elif cx > 1450:
-                m.hold(["d"], 0.35)
-            m.hold(["w"], 0.45)
+            if cx < 850:
+                m.hold(["a"], 0.3)
+            elif cx > 1150:
+                m.hold(["d"], 0.3)
+            m.hold(["w"], 0.5)
             time.sleep(0.3)
             m.log("Dead Ahead vote confirmed on Board 1!", "green")
             m.snap("dead_ahead_voted")
             return
-        m.hold(["w"], 0.3)
+        m.hold(["w"], 0.35)
         time.sleep(0.2)
 
     m.log("finished map selector walk; proceeding to Ready", "yellow")

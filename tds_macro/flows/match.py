@@ -186,6 +186,7 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, i
     ]
 
     m.press("1")
+    inp.click(1118, 1370, hold=0.04)
     time.sleep(0.06)
 
     for ox, oy in search_offsets:
@@ -239,18 +240,19 @@ def _upgrade_scout_at(m: Macro, scout: dict, presses: int = 1) -> bool:
     m.touch()
     cash_before = m.read_cash()
 
-    # Try clicking the base (dy=0), waist (dy=-15), and torso (dy=-25)
-    for dy in (0, -15, -25):
+    # Try clicking the base (dy=0), waist (dy=-15), torso (dy=-25), and head (dy=-35)
+    for dy in (0, -15, -25, -35, 15):
         # 1. Click tower to select
         inp.click(coord[0], coord[1] + dy, hold=0.04, settle=0.06)
         time.sleep(0.08)
 
-        # 2. Trigger upgrades using BOTH the keybind ('e') AND screen buttons
+        # 2. Trigger upgrades using BOTH the keybind ('e') AND screen buttons on the left card (y=390)
         for _ in range(presses):
-            inp.click(290, 800, hold=0.04, settle=0.05)
-            inp.click(200, 785, hold=0.04, settle=0.05)
+            inp.click(120, 390, hold=0.04, settle=0.04)
+            inp.click(180, 390, hold=0.04, settle=0.04)
+            inp.click(220, 390, hold=0.04, settle=0.04)
             m.press("e")
-            time.sleep(0.15)
+            time.sleep(0.12)
 
         time.sleep(0.20)  # Settle time for server replication
         cash_after = m.read_cash()
