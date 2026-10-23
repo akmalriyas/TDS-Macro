@@ -39,20 +39,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
 .dot.pause{background:var(--warn)}
 @keyframes pulse{70%{box-shadow:0 0 0 6px rgba(242,17,61,0)}100%{box-shadow:0 0 0 0 rgba(242,17,61,0)}}
 
-.hud-status-badge{
-  font-family:var(--head);font-weight:600;font-size:9.5px;letter-spacing:.1em;
-  padding:2px 7px;border-radius:3px;background:var(--accent-soft);border:1px solid var(--line-hi);color:var(--accent);text-transform:uppercase;
-}
-.hud-status-badge.idle{color:var(--muted);background:transparent;border-color:var(--line)}
-.hud-status-badge.pause{color:var(--warn);background:rgba(245,179,1,.12);border-color:rgba(245,179,1,.4)}
-.hud-status-badge.win{color:var(--ok);background:rgba(47,224,138,.12);border-color:rgba(47,224,138,.4)}
-
 .hud-progress{height:3px;background:var(--line);border-radius:2px;overflow:hidden}
 .hud-progress-fill{height:100%;width:0%;background:var(--accent);box-shadow:0 0 8px var(--accent);transition:width .4s ease}
 
 .hud-grid{
-  display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:rgba(18,20,28,0.6);
-  border:1px solid var(--line);border-radius:4px;padding:6px 8px;
+  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:rgba(18,20,28,0.6);
+  border:1px solid var(--line);border-radius:4px;padding:7px 10px;
 }
 .hud-cell{display:flex;flex-direction:column;gap:2px}
 .hud-cell span{font-size:8.5px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
@@ -102,7 +94,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
       <span>FLARE // HUD</span>
       <i class="dot" id="h-dot" style="margin-left:2px"></i>
     </div>
-    <div class="hud-status-badge idle" id="h-badge">IDLE</div>
   </div>
 
   <div class="hud-progress">
@@ -117,10 +108,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
     <div class="hud-cell">
       <span>Cash</span>
       <b class="green" id="h-cash">$0</b>
-    </div>
-    <div class="hud-cell">
-      <span>Scouts</span>
-      <b id="h-scouts">0/16</b>
     </div>
     <div class="hud-cell">
       <span>Coins/hr</span>
@@ -147,30 +134,32 @@ window.updateHud = function(s) {
   if (!s) return;
   const run = s.status === "RUNNING", pause = s.status === "PAUSED", idle = s.status === "IDLE";
   
-  // Dot & badge
-  $("#h-dot").className = "dot " + (run ? "run" : pause ? "pause" : "");
-  const badge = $("#h-badge");
-  badge.textContent = s.status || "IDLE";
-  badge.className = "hud-status-badge " + (run ? "" : pause ? "pause" : "idle");
+  // Dot
+  const dot = $("#h-dot");
+  if (dot) dot.className = "dot " + (run ? "run" : pause ? "pause" : "");
 
   // Wave & progress
   const w = s.wave != null ? s.wave : 0;
-  $("#h-wave").textContent = `${w}/20`;
-  $("#h-bar").style.width = Math.min(100, (w / 20) * 100) + "%";
+  const waveEl = $("#h-wave");
+  if (waveEl) waveEl.textContent = `${w}/20`;
+  const barEl = $("#h-bar");
+  if (barEl) barEl.style.width = Math.min(100, (w / 20) * 100) + "%";
 
-  // Cash, Scouts, Coins/hr
-  $("#h-cash").textContent = s.cash != null ? "$" + fmt(s.cash) : "—";
-  $("#h-scouts").textContent = `${s.scouts || 0}/16`;
-  $("#h-cph").textContent = fmt(s.coins_per_hr) + "/hr";
+  // Cash & Coins/hr
+  const cashEl = $("#h-cash");
+  if (cashEl) cashEl.textContent = s.cash != null ? "$" + fmt(s.cash) : "—";
+  const cphEl = $("#h-cph");
+  if (cphEl) cphEl.textContent = fmt(s.coins_per_hr) + "/hr";
 
   // Action / Simple word status
-  $("#h-action").textContent = s.sys || "Idle";
+  const actEl = $("#h-action");
+  if (actEl) actEl.textContent = s.sys || (idle ? "Idle" : "Running");
 
   // Hotkeys if provided
   if (s.hotkeys) {
-    if (s.hotkeys.start) $("#h-k-start").textContent = s.hotkeys.start;
-    if (s.hotkeys.pause) $("#h-k-pause").textContent = s.hotkeys.pause;
-    if (s.hotkeys.stop) $("#h-k-stop").textContent = s.hotkeys.stop;
+    if (s.hotkeys.start && $("#h-k-start")) $("#h-k-start").textContent = s.hotkeys.start;
+    if (s.hotkeys.pause && $("#h-k-pause")) $("#h-k-pause").textContent = s.hotkeys.pause;
+    if (s.hotkeys.stop && $("#h-k-stop")) $("#h-k-stop").textContent = s.hotkeys.stop;
   }
 };
 </script>

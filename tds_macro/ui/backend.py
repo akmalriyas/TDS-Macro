@@ -385,10 +385,15 @@ class Core:
     def test_webhook(self, url: str) -> dict:
         ok, msg = send_discord_webhook(
             url.strip(),
-            title="Flare Macro connected",
-            description="Run results and performance reports will be posted to this channel.",
-            color=0xFF2A55,
-            footer="Flare Macro - TDS",
+            title="WEBHOOK INTEGRATION CONNECTED",
+            description="Flare Macro has successfully authenticated with this Discord channel.\nMatch results, hourly statistics, and system alerts will be dispatched here.",
+            color=0x38BDF8,
+            fields=[
+                {"name": "Engine Status", "value": "`Online & Active`", "inline": True},
+                {"name": "Release Build", "value": "`v2.16 • Production`", "inline": True},
+                {"name": "Target Client", "value": "`Tower Defense Simulator`", "inline": True},
+            ],
+            footer="Flare Macro • TDS Autonomous Engine",
         )
         return {"ok": ok, "message": msg}
 

@@ -5,7 +5,7 @@ import csv
 import json
 import threading
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -131,30 +131,61 @@ class RunLog:
                     pass
         return out
 
-    def hourly(self) -> list[dict]:
-        buckets: dict[str, dict] = {}
-        for r in self.records():
+    def hourly(self, hours: int = 24) -> list[dict]:
+        records = self.records()
+        if not records:
+            return []
+
+        dt_records: list[tuple[datetime, dict]] = []
+        for r in records:
             ts = r.get("ended_at") or r.get("started_at")
             if not ts:
                 continue
             try:
                 dt = datetime.fromisoformat(ts)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                dt_records.append((dt, r))
             except ValueError:
                 continue
+
+        if not dt_records:
+            return []
+
+        now_utc = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        latest_rec = max(x[0] for x in dt_records).replace(minute=0, second=0, microsecond=0)
+        end_dt = max(latest_rec, now_utc)
+        start_dt = end_dt - timedelta(hours=hours - 1)
+
+        buckets: dict[str, dict] = {}
+        curr = start_dt
+        while curr <= end_dt:
+            key = curr.strftime("%Y-%m-%d %H:00")
+            buckets[key] = {
+                "hour": key,
+                "runs": 0,
+                "wins": 0,
+                "losses": 0,
+                "coins": 0,
+                "gems": 0,
+                "seconds": 0.0,
+            }
+            curr += timedelta(hours=1)
+
+        for dt, r in dt_records:
             key = dt.strftime("%Y-%m-%d %H:00")
-            b = buckets.setdefault(
-                key,
-                {"hour": key, "runs": 0, "wins": 0, "losses": 0, "coins": 0, "gems": 0, "seconds": 0.0},
-            )
-            b["runs"] += 1
-            result = (r.get("result") or "").lower()
-            if result in ("victory", "triumph", "win"):
-                b["wins"] += 1
-            elif result in ("defeat", "loss"):
-                b["losses"] += 1
-            b["coins"] += int(r.get("coin_delta") or 0)
-            b["gems"] += int(r.get("gem_delta") or 0)
-            b["seconds"] += float(r.get("duration_s") or 0)
+            if key in buckets:
+                b = buckets[key]
+                b["runs"] += 1
+                result = (r.get("result") or "").lower()
+                if result in ("victory", "triumph", "win"):
+                    b["wins"] += 1
+                elif result in ("defeat", "loss"):
+                    b["losses"] += 1
+                b["coins"] += int(r.get("coin_delta") or r.get("reward_coins") or 0)
+                b["gems"] += int(r.get("gem_delta") or 0)
+                b["seconds"] += float(r.get("duration_s") or 0)
+
         return [buckets[k] for k in sorted(buckets)]
 
     def summary(self) -> dict:

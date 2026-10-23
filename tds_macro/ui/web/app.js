@@ -242,15 +242,130 @@ async function loadAnalytics() {
     kpi("Runs", s.runs) + kpi("Win rate", rate) + kpi("Coins earned", fmt(s.coins_total), "red") +
     kpi("Coins / hr", fmt(Math.round(s.coins_per_hour))) + kpi("XP earned", fmt(s.xp_total));
 
-  const hrs = a.hourly;
-  const max = Math.max(1, ...hrs.map((h) => h.coins));
-  $("#chart").innerHTML = hrs.length
-    ? `<div style="display:flex;align-items:flex-end;gap:10px;height:100%">${hrs.map((h) => `
-        <div title="${fmt(h.coins)} coins · ${h.runs} runs" style="flex:1;max-width:64px;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:6px">
-          <div style="height:${Math.max(3, (h.coins / max) * 78)}%;background:linear-gradient(180deg,var(--accent),rgba(242,17,61,.35));border-radius:3px 3px 0 0"></div>
-          <span style="font-size:10px;color:var(--muted);text-align:center">${h.hour.slice(11, 16)}</span>
-        </div>`).join("")}</div>`
-    : `<div class="empty">No completed runs yet.</div>`;
+  const hrs = a.hourly || [];
+  const chartBox = $("#chart");
+  
+  if (!hrs.length) {
+    chartBox.innerHTML = `<div class="empty">No completed runs recorded yet.</div>`;
+  } else {
+    const coinsArr = hrs.map((h) => h.coins || 0);
+    const maxVal = Math.max(1, ...coinsArr);
+    const total24h = coinsArr.reduce((acc, c) => acc + c, 0);
+    const totalRuns24h = hrs.reduce((acc, h) => acc + (h.runs || 0), 0);
+
+    const fmtCompact = (n) => {
+      if (!n) return "0";
+      if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+      if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+      return String(n);
+    };
+
+    const vbWidth = 760;
+    const vbHeight = 150;
+    const leftMargin = 48;
+    const rightMargin = 746;
+    const topMargin = 16;
+    const baseLineY = 122;
+    const plotHeight = baseLineY - topMargin;
+    const plotWidth = rightMargin - leftMargin;
+    const numBars = hrs.length;
+    const slotW = plotWidth / numBars;
+    const barW = Math.max(8, Math.min(22, slotW - 5));
+
+    const midVal = Math.round(maxVal / 2);
+    const midY = topMargin + plotHeight / 2;
+
+    let barsSvg = "";
+    let hitsSvg = "";
+    let labelsSvg = "";
+
+    hrs.forEach((h, i) => {
+      const centerX = leftMargin + (i + 0.5) * slotW;
+      const barX = centerX - barW / 2;
+      const coins = h.coins || 0;
+      
+      if (coins > 0) {
+        const barH = Math.max(4, (coins / maxVal) * plotHeight);
+        const barY = baseLineY - barH;
+        barsSvg += `
+          <g class="chart-bar-group" id="cbar-${i}">
+            <rect x="${barX.toFixed(1)}" y="${barY.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="3" ry="3" fill="url(#flare-bar-grad)" class="chart-bar" />
+            <line x1="${barX.toFixed(1)}" y1="${barY.toFixed(1)}" x2="${(barX + barW).toFixed(1)}" y2="${barY.toFixed(1)}" stroke="#ff4d6d" stroke-width="1.5" stroke-linecap="round" />
+          </g>`;
+      }
+
+      const shouldLabel = (i % 3 === 0 && (numBars - 1 - i) >= 2) || i === numBars - 1;
+      if (shouldLabel) {
+        const timeStr = h.hour ? h.hour.slice(11, 16) : "";
+        labelsSvg += `<text x="${centerX.toFixed(1)}" y="${baseLineY + 18}" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--muted)">${timeStr}</text>`;
+      }
+
+      const slotLeft = leftMargin + i * slotW;
+      hitsSvg += `<rect x="${slotLeft.toFixed(1)}" y="${topMargin}" width="${slotW.toFixed(1)}" height="${plotHeight + 24}" fill="transparent" class="chart-slot" data-index="${i}" />`;
+    });
+
+    const defaultReadout = `Peak: <b>${fmt(maxVal)}</b> coins/hr &nbsp;·&nbsp; Total: <b class="red">+${fmt(total24h)}</b> coins &nbsp;·&nbsp; <b>${totalRuns24h}</b> runs`;
+
+    chartBox.innerHTML = `
+      <div class="chart-head-bar">
+        <span class="chart-tag">24-Hour Performance</span>
+        <span class="chart-readout" id="chart-readout">${defaultReadout}</span>
+      </div>
+      <div class="chart-wrap">
+        <svg viewBox="0 0 ${vbWidth} ${vbHeight}" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="flare-bar-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#f2113d" stop-opacity="1"/>
+              <stop offset="60%" stop-color="#a60c29" stop-opacity="0.85"/>
+              <stop offset="100%" stop-color="#4a0513" stop-opacity="0.4"/>
+            </linearGradient>
+          </defs>
+
+          <!-- Gridlines -->
+          <line x1="${leftMargin}" y1="${topMargin}" x2="${rightMargin}" y2="${topMargin}" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3,3" stroke-width="1" />
+          <line x1="${leftMargin}" y1="${midY.toFixed(1)}" x2="${rightMargin}" y2="${midY.toFixed(1)}" stroke="rgba(255,255,255,0.05)" stroke-dasharray="3,3" stroke-width="1" />
+          <line x1="${leftMargin}" y1="${baseLineY}" x2="${rightMargin}" y2="${baseLineY}" stroke="rgba(255,255,255,0.18)" stroke-width="1.2" />
+
+          <!-- Y-axis labels -->
+          <text x="${leftMargin - 8}" y="${topMargin + 3}" text-anchor="end" font-family="var(--mono)" font-size="9.5" fill="var(--muted)">${fmtCompact(maxVal)}</text>
+          <text x="${leftMargin - 8}" y="${midY.toFixed(1) + 3}" text-anchor="end" font-family="var(--mono)" font-size="9.5" fill="var(--muted)">${fmtCompact(midVal)}</text>
+          <text x="${leftMargin - 8}" y="${baseLineY + 3}" text-anchor="end" font-family="var(--mono)" font-size="9.5" fill="var(--muted)">0</text>
+
+          <!-- Bars -->
+          ${barsSvg}
+
+          <!-- X-axis Labels -->
+          ${labelsSvg}
+
+          <!-- Interactive Hit Slots -->
+          ${hitsSvg}
+        </svg>
+      </div>`;
+
+    const readout = $("#chart-readout");
+    chartBox.querySelectorAll(".chart-slot").forEach((slot) => {
+      const idx = Number(slot.getAttribute("data-index"));
+      const h = hrs[idx];
+      slot.addEventListener("mouseenter", () => {
+        if (!h || !readout) return;
+        const timeStr = h.hour ? h.hour.slice(11, 16) : "—";
+        const coins = h.coins || 0;
+        const runs = h.runs || 0;
+        const wins = h.wins || 0;
+        const losses = h.losses || 0;
+        readout.innerHTML = `Hour <b>${timeStr}</b> &nbsp;·&nbsp; <b class="red">${fmt(coins)} coins</b> &nbsp;·&nbsp; <b>${runs} runs</b> (${wins}W / ${losses}L)`;
+        const barGrp = $(`#cbar-${idx}`);
+        if (barGrp) barGrp.style.filter = "drop-shadow(0 0 10px rgba(242,17,61,0.9))";
+      });
+
+      slot.addEventListener("mouseleave", () => {
+        if (!readout) return;
+        readout.innerHTML = defaultReadout;
+        const barGrp = $(`#cbar-${idx}`);
+        if (barGrp) barGrp.style.filter = "";
+      });
+    });
+  }
 
   const cls = (r) => (["victory", "triumph", "win"].includes(r) ? "w" : r === "defeat" ? "l" : "e");
   const word = (r) => (["victory", "triumph", "win"].includes(r) ? "TRIUMPH" : r.toUpperCase());
