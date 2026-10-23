@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flare Macro HUD</title>
+<style>
+@font-face{font-family:"Chakra Petch";font-weight:600;src:url(fonts/chakra-600.woff2) format("woff2")}
+@font-face{font-family:"Chakra Petch";font-weight:700;src:url(fonts/chakra-700.woff2) format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-weight:400;src:url(fonts/jbm-400.woff2) format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-weight:700;src:url(fonts/jbm-700.woff2) format("woff2")}
+
+:root{
+  --bg:#07080b; --card:#0e1017;
+  --line:#222530; --line-hi:rgba(242,17,61,.55);
+  --text:#f3f3f6; --muted:#8a8d9a; --dim:#525562;
+  --accent:#f2113d; --accent-soft:rgba(242,17,61,.14);
+  --ok:#2fe08a; --warn:#f5b301;
+  --head:"Chakra Petch","Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-family:var(--mono);font-size:11.5px;color:var(--text);user-select:none}
+
+.hud-panel{
+  width:100%;height:100%;
+  background:rgba(8,9,14,0.92);
+  border:1px solid var(--line-hi);
+  clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+  padding:10px 14px 10px 14px;
+  display:flex;flex-direction:column;gap:7px;
+  box-shadow:0 0 24px rgba(242,17,61,0.22) inset, 0 4px 18px rgba(0,0,0,0.6);
+}
+
+.hud-head{display:flex;align-items:center;justify-content:space-between}
+.hud-brand{display:flex;align-items:center;gap:7px;font-family:var(--head);font-weight:700;font-size:12.5px;letter-spacing:.08em;color:var(--accent)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+.dot.run{background:var(--accent);box-shadow:0 0 0 0 rgba(242,17,61,.7);animation:pulse 1.8s infinite}
+.dot.pause{background:var(--warn)}
+@keyframes pulse{70%{box-shadow:0 0 0 6px rgba(242,17,61,0)}100%{box-shadow:0 0 0 0 rgba(242,17,61,0)}}
+
+.hud-status-badge{
+  font-family:var(--head);font-weight:600;font-size:9.5px;letter-spacing:.1em;
+  padding:2px 7px;border-radius:3px;background:var(--accent-soft);border:1px solid var(--line-hi);color:var(--accent);text-transform:uppercase;
+}
+.hud-status-badge.idle{color:var(--muted);background:transparent;border-color:var(--line)}
+.hud-status-badge.pause{color:var(--warn);background:rgba(245,179,1,.12);border-color:rgba(245,179,1,.4)}
+.hud-status-badge.win{color:var(--ok);background:rgba(47,224,138,.12);border-color:rgba(47,224,138,.4)}
+
+.hud-progress{height:3px;background:var(--line);border-radius:2px;overflow:hidden}
+.hud-progress-fill{height:100%;width:0%;background:var(--accent);box-shadow:0 0 8px var(--accent);transition:width .4s ease}
+
+.hud-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:rgba(18,20,28,0.6);
+  border:1px solid var(--line);border-radius:4px;padding:6px 8px;
+}
+.hud-cell{display:flex;flex-direction:column;gap:2px}
+.hud-cell span{font-size:8.5px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.hud-cell b{font-size:12px;font-variant-numeric:tabular-nums;color:var(--text);white-space:nowrap}
+.hud-cell b.red{color:var(--accent)}
+.hud-cell b.green{color:var(--ok)}
+.hud-cell b.yellow{color:var(--warn)}
+
+.hud-foot{
+  display:flex;align-items:center;justify-content:space-between;
+  border-top:1px solid var(--line);padding-top:6px;font-size:9.5px;color:var(--muted);
+}
+.hud-action{color:var(--text);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
+.hud-hotkeys{display:flex;gap:7px}
+.hud-hotkeys kbd{font-family:var(--mono);font-size:9px;color:var(--muted);padding:1px 4px;border:1px solid var(--line);border-radius:3px;background:#050608}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-flare" viewBox="0 0 32 32">
+      <defs>
+        <linearGradient id="flare-g" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ff3366"/>
+          <stop offset="60%" stop-color="#f2113d"/>
+          <stop offset="100%" stop-color="#800014"/>
+        </linearGradient>
+        <linearGradient id="flare-core" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ffe680"/>
+          <stop offset="50%" stop-color="#ff6600"/>
+          <stop offset="100%" stop-color="#f2113d"/>
+        </linearGradient>
+      </defs>
+      <polygon points="9,9 13,14 9,18 10,23 5,19 4,13" fill="#f2113d" opacity="0.85"/>
+      <polygon points="23,9 28,13 27,19 22,23 23,18 19,14" fill="#f2113d" opacity="0.85"/>
+      <polygon points="16,2 21,13 18,16 20,25 16,30 12,25 14,16 11,13" fill="url(#flare-g)"/>
+      <polygon points="16,8 18.5,16 16,22 13.5,16" fill="url(#flare-core)"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="hud-panel">
+  <div class="hud-head">
+    <div class="hud-brand">
+      <svg style="width:17px;height:17px;filter:drop-shadow(0 0 6px rgba(242,17,61,.75));flex:none" viewBox="0 0 32 32"><use href="#i-flare"/></svg>
+      <span>FLARE // HUD</span>
+      <i class="dot" id="h-dot" style="margin-left:2px"></i>
+    </div>
+    <div class="hud-status-badge idle" id="h-badge">IDLE</div>
+  </div>
+
+  <div class="hud-progress">
+    <div class="hud-progress-fill" id="h-bar"></div>
+  </div>
+
+  <div class="hud-grid">
+    <div class="hud-cell">
+      <span>Wave</span>
+      <b class="red" id="h-wave">0/20</b>
+    </div>
+    <div class="hud-cell">
+      <span>Cash</span>
+      <b class="green" id="h-cash">$0</b>
+    </div>
+    <div class="hud-cell">
+      <span>Scouts</span>
+      <b id="h-scouts">0/16</b>
+    </div>
+    <div class="hud-cell">
+      <span>Coins/hr</span>
+      <b class="yellow" id="h-cph">0/hr</b>
+    </div>
+  </div>
+
+  <div class="hud-foot">
+    <div class="hud-action" id="h-action">Idle</div>
+    <div class="hud-hotkeys">
+      <span><kbd id="h-k-start">F1</kbd> Start</span>
+      <span><kbd id="h-k-pause">F2</kbd> Pause</span>
+      <span><kbd id="h-k-stop">F3</kbd> Stop</span>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const fmt = (n) => Number(n || 0).toLocaleString("en-US");
+
+window.updateHud = function(s) {
+  if (!s) return;
+  const run = s.status === "RUNNING", pause = s.status === "PAUSED", idle = s.status === "IDLE";
+  
+  // Dot & badge
+  $("#h-dot").className = "dot " + (run ? "run" : pause ? "pause" : "");
+  const badge = $("#h-badge");
+  badge.textContent = s.status || "IDLE";
+  badge.className = "hud-status-badge " + (run ? "" : pause ? "pause" : "idle");
+
+  // Wave & progress
+  const w = s.wave != null ? s.wave : 0;
+  $("#h-wave").textContent = `${w}/20`;
+  $("#h-bar").style.width = Math.min(100, (w / 20) * 100) + "%";
+
+  // Cash, Scouts, Coins/hr
+  $("#h-cash").textContent = s.cash != null ? "$" + fmt(s.cash) : "—";
+  $("#h-scouts").textContent = `${s.scouts || 0}/16`;
+  $("#h-cph").textContent = fmt(s.coins_per_hr) + "/hr";
+
+  // Action / Simple word status
+  $("#h-action").textContent = s.sys || "Idle";
+
+  // Hotkeys if provided
+  if (s.hotkeys) {
+    if (s.hotkeys.start) $("#h-k-start").textContent = s.hotkeys.start;
+    if (s.hotkeys.pause) $("#h-k-pause").textContent = s.hotkeys.pause;
+    if (s.hotkeys.stop) $("#h-k-stop").textContent = s.hotkeys.stop;
+  }
+};
+</script>
+</body>
+</html>

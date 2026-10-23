@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flare Macro - TDS</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></symbol>
+    <symbol id="i-flare" viewBox="0 0 32 32">
+      <defs>
+        <linearGradient id="flare-g" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ff3366"/>
+          <stop offset="60%" stop-color="#f2113d"/>
+          <stop offset="100%" stop-color="#800014"/>
+        </linearGradient>
+        <linearGradient id="flare-core" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ffe680"/>
+          <stop offset="50%" stop-color="#ff6600"/>
+          <stop offset="100%" stop-color="#f2113d"/>
+        </linearGradient>
+      </defs>
+      <!-- Outer Wings -->
+      <polygon points="9,9 13,14 9,18 10,23 5,19 4,13" fill="#f2113d" opacity="0.85"/>
+      <polygon points="23,9 28,13 27,19 22,23 23,18 19,14" fill="#f2113d" opacity="0.85"/>
+      <!-- Central Spear Flame -->
+      <polygon points="16,2 21,13 18,16 20,25 16,30 12,25 14,16 11,13" fill="url(#flare-g)"/>
+      <!-- Bright Ignition Diamond -->
+      <polygon points="16,8 18.5,16 16,22 13.5,16" fill="url(#flare-core)"/>
+    </symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M3 6h.01M3 12h.01M3 18h.01M8 6h13M8 12h13M8 18h13"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+    <symbol id="i-radio" viewBox="0 0 24 24"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5M19.1 4.9C23 8.8 23 15.1 19.1 19"/><circle cx="12" cy="12" r="2"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16M19 9l-5 5-4-4-3 3"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></symbol>
+    <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14M5 2h14M17 22v-4.17a2 2 0 0 0-.59-1.41L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22M7 2v4.17a2 2 0 0 0 .59 1.41L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="M14.1 5.55a2 2 0 0 0 1.79 0l3.66-1.83A1 1 0 0 1 21 4.62v12.76a1 1 0 0 1-.55.9l-4.55 2.28a2 2 0 0 1-1.79 0l-4.21-2.1a2 2 0 0 0-1.79 0l-3.66 1.83A1 1 0 0 1 3 19.38V6.62a1 1 0 0 1 .55-.9l4.55-2.27a2 2 0 0 1 1.79 0zM15 5.76v15M9 3.24v15"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-min" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-max" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></symbol>
+    <symbol id="i-coins" viewBox="0 0 24 24"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18M7 6h1v4M16.71 13.88l.7.71-2.82 2.82"/></symbol>
+    <symbol id="i-discord" viewBox="0 0 24 24"><path stroke="none" fill="currentColor" d="M20.32 4.37a19.8 19.8 0 0 0-4.89-1.52.07.07 0 0 0-.08.04c-.21.38-.44.87-.6 1.25a18.3 18.3 0 0 0-5.5 0c-.17-.4-.4-.87-.62-1.25a.08.08 0 0 0-.08-.04 19.7 19.7 0 0 0-4.88 1.52.07.07 0 0 0-.03.03C.53 9.05-.32 13.58.1 18.06a.08.08 0 0 0 .03.06 19.9 19.9 0 0 0 5.99 3.03.08.08 0 0 0 .08-.03c.46-.63.87-1.3 1.23-2a.08.08 0 0 0-.04-.1 13 13 0 0 1-1.87-.9.08.08 0 0 1-.01-.13l.37-.29a.07.07 0 0 1 .08-.01c3.93 1.8 8.18 1.8 12.06 0a.07.07 0 0 1 .08.01l.37.3a.08.08 0 0 1-.01.12c-.6.35-1.22.65-1.87.9a.08.08 0 0 0-.04.11c.36.7.77 1.36 1.22 2a.08.08 0 0 0 .09.03 19.8 19.8 0 0 0 6-3.03.08.08 0 0 0 .03-.05c.5-5.18-.84-9.67-3.55-13.66a.06.06 0 0 0-.03-.03zM8.02 15.33c-1.18 0-2.16-1.08-2.16-2.42s.96-2.42 2.16-2.42c1.21 0 2.18 1.1 2.16 2.42 0 1.34-.96 2.42-2.16 2.42zm7.97 0c-1.18 0-2.16-1.08-2.16-2.42s.95-2.42 2.16-2.42c1.21 0 2.18 1.1 2.16 2.42 0 1.34-.95 2.42-2.16 2.42z"/></symbol>
+    <symbol id="i-bomb" viewBox="0 0 24 24"><circle cx="11" cy="13" r="8"/><path d="m17 7 3-3M19 1l2 2M22 5l-2-2M15 9l2-2"/></symbol>
+    <symbol id="i-glass" viewBox="0 0 24 24"><polygon points="12 2 22 8.5 18 21 6 21 2 8.5 12 2"/><path d="M12 2v19M2 8.5h20M6 21l6-12.5L18 21"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></symbol>
+    <symbol id="i-skull" viewBox="0 0 24 24"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2M12.5 17l-.5-1-.5 1M16 20a3 3 0 0 0 3-3v-4a7 7 0 1 0-14 0v4a3 3 0 0 0 3 3"/></symbol>
+  </defs>
+</svg>
+
+<div class="app" id="app">
+
+  <header class="titlebar pywebview-drag-region">
+    <div class="brand">
+      <svg class="brand-logo" viewBox="0 0 32 32"><use href="#i-flare"/></svg>
+      <span class="brand-name">Flare Macro - TDS</span>
+      <span class="ver">v1.0.0</span>
+    </div>
+    <div class="wc">
+      <button class="wc-btn" id="wc-min" aria-label="Minimize"><svg class="ico"><use href="#i-min"/></svg></button>
+      <button class="wc-btn" id="wc-max" aria-label="Maximize"><svg class="ico"><use href="#i-max"/></svg></button>
+      <button class="wc-btn wc-close" id="wc-close" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab" data-view="queue"><svg class="ico"><use href="#i-list"/></svg>Queue</button>
+    <button class="tab" data-view="runsettings"><svg class="ico"><use href="#i-sliders"/></svg>Run Settings</button>
+    <button class="tab" data-view="webhooks"><svg class="ico"><use href="#i-radio"/></svg>Webhooks</button>
+  </nav>
+
+  <div class="main">
+    <aside class="rail">
+      <button class="rail-btn" data-view="queue" title="Queue"><svg class="ico"><use href="#i-play"/></svg></button>
+      <div class="rail-sep"></div>
+      <button class="rail-btn" data-view="live" title="Live monitor"><svg class="ico"><use href="#i-monitor"/></svg></button>
+      <button class="rail-btn" data-view="analytics" title="Analytics"><svg class="ico"><use href="#i-chart"/></svg></button>
+      <div class="grow"></div>
+      <button class="rail-btn" data-view="settings" title="Settings"><svg class="ico"><use href="#i-sliders"/></svg></button>
+    </aside>
+
+    <main class="stage" id="stage">
+      <svg class="radar" viewBox="0 0 400 400" aria-hidden="true">
+        <circle cx="200" cy="200" r="150"/><circle cx="200" cy="200" r="96"/>
+        <path d="M200 0v70M200 330v70M330 200h70"/>
+      </svg>
+
+      <!-- QUEUE -->
+      <section class="view" data-view="queue">
+        <div class="view-head">
+          <div>
+            <h1>ACTIVE QUEUE</h1>
+            <p class="sub">EXECUTING TASK LIST IN SEQUENCE</p>
+          </div>
+          <button class="btn-ghost cut" id="add-task"><svg class="ico"><use href="#i-plus"/></svg>ADD TASK</button>
+        </div>
+        <div class="rule"></div>
+        <div class="queue" id="queue"></div>
+      </section>
+
+      <!-- RUN SETTINGS -->
+      <section class="view" data-view="runsettings" hidden>
+        <div class="view-head">
+          <div>
+            <h1>RUN SETTINGS</h1>
+            <p class="sub">MATCHMAKING & LOADOUT REQUIREMENTS</p>
+          </div>
+        </div>
+        <div class="rule"></div>
+        <div class="panel">
+          <div class="row">
+            <div class="row-text">
+              <b>Play Again after each match</b>
+              <span>Click “Play Again” on the match results screen instead of returning to the lobby.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="set-play-again"><i></i></label>
+          </div>
+          <div class="row">
+            <div class="row-text">
+              <b>Verify Loadout Requirements</b>
+              <span>Opens inventory once per session to confirm Scout and Golden skin are equipped.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="set-verify"><i></i></label>
+          </div>
+          <div class="row row-col">
+            <div class="row-header">
+              <div class="row-text">
+                <div class="row-title-wrap">
+                  <b>Game Modifiers</b>
+                  <span class="badge" id="mod-active-count">2 ACTIVE</span>
+                </div>
+                <span>Automatically configure and vote for challenge modifiers in intermission to maximize coin rewards.</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="set-modifiers-enabled"><i></i></label>
+            </div>
+            <div class="mod-chips-bar" id="mod-chips-bar">
+              <div class="mod-chips" id="mod-active-chips"></div>
+              <button type="button" class="btn-ghost cut sm mod-open-btn" id="btn-open-modifiers">
+                <svg class="ico"><use href="#i-sliders"/></svg>
+                <span>CONFIGURE MODIFIERS</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- WEBHOOKS -->
+      <section class="view" data-view="webhooks" hidden>
+        <div class="view-head">
+          <div>
+            <h1>WEBHOOKS</h1>
+            <p class="sub">DISCORD NOTIFICATIONS & REPORTS</p>
+          </div>
+        </div>
+        <div class="rule"></div>
+        <div class="panel">
+          <label class="field">
+            <span>Webhook URL</span>
+            <input type="url" id="set-url" placeholder="https://discord.com/api/webhooks/…" spellcheck="false" autocomplete="off">
+          </label>
+          <div class="row">
+            <div class="row-text"><b>Post on Triumph</b><span>Send run breakdown embed when a match ends in victory.</span></div>
+            <label class="switch"><input type="checkbox" id="set-on-win"><i></i></label>
+          </div>
+          <div class="row">
+            <div class="row-text"><b>Post on Defeat</b><span>Send run breakdown embed when a match ends in defeat.</span></div>
+            <label class="switch"><input type="checkbox" id="set-on-loss"><i></i></label>
+          </div>
+          <div class="row">
+            <div class="row-text"><b>Report Errors & Crashes</b><span>Send alert embed if matchmaking fails or an unexpected exception occurs.</span></div>
+            <label class="switch"><input type="checkbox" id="set-on-error"><i></i></label>
+          </div>
+          <div class="row">
+            <div class="row-text"><b>Hourly Performance Reports</b><span>Send hourly summary card with total coins earned and win rate.</span></div>
+            <label class="switch"><input type="checkbox" id="set-on-hourly"><i></i></label>
+          </div>
+          <div class="actions">
+            <button class="btn cut" id="wh-save">SAVE</button>
+            <button class="btn cut" id="wh-test">SEND TEST</button>
+            <span class="inline-status" id="wh-status" role="status"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- LIVE -->
+      <section class="view" data-view="live" hidden>
+        <div class="view-head">
+          <div>
+            <h1>LIVE MONITOR</h1>
+            <p class="sub">READ DIRECTLY FROM THE GAME HUD</p>
+          </div>
+        </div>
+        <div class="rule"></div>
+        <div class="kpis" id="live-kpis"></div>
+        <h2 class="group">ACTION LOG</h2>
+        <pre class="log" id="log"></pre>
+      </section>
+
+      <!-- ANALYTICS -->
+      <section class="view" data-view="analytics" hidden>
+        <div class="view-head">
+          <div>
+            <h1>ANALYTICS</h1>
+            <p class="sub">ALL RECORDED RUNS</p>
+          </div>
+        </div>
+        <div class="rule"></div>
+        <div class="kpis" id="an-kpis"></div>
+        <h2 class="group">COINS PER HOUR</h2>
+        <div class="chart" id="chart"></div>
+        <h2 class="group">RECENT RUNS</h2>
+        <div class="table-wrap"><table class="runs" id="runs"></table></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="view" data-view="settings" hidden>
+        <div class="view-head">
+          <div>
+            <h1>SETTINGS</h1>
+            <p class="sub">APPLICATION</p>
+          </div>
+        </div>
+        <div class="rule"></div>
+        <div class="panel">
+          <div class="row">
+            <div class="row-text"><b>Show HUD overlay</b><span>Display in-game click-through HUD overlay on screen with real-time stats.</span></div>
+            <label class="switch"><input type="checkbox" id="set-show-hud"><i></i></label>
+          </div>
+          <div class="row">
+            <div class="row-text"><b>Reset queue progress</b><span>Marks every task in queue as not started and zeroes run counters.</span></div>
+            <button class="btn cut sm" id="reset-progress">RESET</button>
+          </div>
+        </div>
+        <h2 class="group">HOTKEY CONFIGURATION</h2>
+        <div class="panel hk-grid">
+          <div class="hk-row">
+            <div class="hk-text"><b>Start / Resume Queue</b><span>Launches the active queue or resumes current match.</span></div>
+            <div class="hk-control">
+              <button type="button" class="hk-keycap cut" id="hk-btn-start" data-action="start">
+                <span class="hk-dot"></span>
+                <span class="hk-val" id="hk-val-start">F1</span>
+                <span class="hk-sub">PRESS TO BIND</span>
+              </button>
+              <button type="button" class="hk-drop-btn" id="hk-drop-start" data-action="start" title="Choose from list"><svg class="ico"><use href="#i-chevron-down"/></svg></button>
+            </div>
+          </div>
+          <div class="hk-row">
+            <div class="hk-text"><b>Pause / Resume Macro</b><span>Halts movement and pauses actions.</span></div>
+            <div class="hk-control">
+              <button type="button" class="hk-keycap cut" id="hk-btn-pause" data-action="pause">
+                <span class="hk-dot"></span>
+                <span class="hk-val" id="hk-val-pause">F2</span>
+                <span class="hk-sub">PRESS TO BIND</span>
+              </button>
+              <button type="button" class="hk-drop-btn" id="hk-drop-pause" data-action="pause" title="Choose from list"><svg class="ico"><use href="#i-chevron-down"/></svg></button>
+            </div>
+          </div>
+          <div class="hk-row">
+            <div class="hk-text"><b>Emergency Stop</b><span>Releases all keys and stops the macro immediately.</span></div>
+            <div class="hk-control">
+              <button type="button" class="hk-keycap cut" id="hk-btn-stop" data-action="stop">
+                <span class="hk-dot"></span>
+                <span class="hk-val" id="hk-val-stop">F3</span>
+                <span class="hk-sub">PRESS TO BIND</span>
+              </button>
+              <button type="button" class="hk-drop-btn" id="hk-drop-stop" data-action="stop" title="Choose from list"><svg class="ico"><use href="#i-chevron-down"/></svg></button>
+            </div>
+          </div>
+          <div class="hk-row">
+            <div class="hk-text"><b>Toggle In-Game HUD</b><span>Shows or hides the on-screen click-through HUD overlay.</span></div>
+            <div class="hk-control">
+              <button type="button" class="hk-keycap cut" id="hk-btn-overlay" data-action="overlay">
+                <span class="hk-dot"></span>
+                <span class="hk-val" id="hk-val-overlay">F7</span>
+                <span class="hk-sub">PRESS TO BIND</span>
+              </button>
+              <button type="button" class="hk-drop-btn" id="hk-drop-overlay" data-action="overlay" title="Choose from list"><svg class="ico"><use href="#i-chevron-down"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div class="love-credit">
+          <span>Made with <i class="heart">♥</i> by Akmal Riyas</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="dock">
+    <div class="status-row">
+      <div class="sys">
+        <i class="dot" id="dot"></i>
+        <span class="sys-k">Status //</span>
+        <span class="sys-v" id="sys">Idle</span>
+      </div>
+      <div class="tele">
+        <div><span>Elapsed Time</span><b class="red mono" id="elapsed">00:00:00</b></div>
+        <div class="vr"></div>
+        <div><span>Coins Farmed</span><b class="mono" id="coins">0</b></div>
+      </div>
+    </div>
+    <div class="actions-row">
+      <button class="act cut" id="btn-start"><svg class="ico fill"><use href="#i-play"/></svg><span>START MACRO</span><kbd id="badge-start">F1</kbd></button>
+      <button class="act cut pause" id="btn-pause"><svg class="ico fill"><use href="#i-pause"/></svg><span>PAUSE</span><kbd id="badge-pause">F2</kbd></button>
+      <button class="act cut stop" id="btn-stop"><svg class="ico fill"><use href="#i-stop"/></svg><span>STOP</span><kbd id="badge-stop">F3</kbd></button>
+      <div class="grow"></div>
+      <button class="hook cut" id="hook" title="Webhook settings">
+        <svg class="ico discord"><use href="#i-discord"/></svg>
+        <div><span>WEBHOOK STATUS</span><b id="hook-v">NOT SET</b></div>
+      </button>
+    </div>
+  </footer>
+</div>
+
+
+<!-- Hotkey Popover Modal -->
+<div class="scrim" id="hk-modal-scrim" hidden>
+  <div class="modal cut hk-modal" role="dialog" aria-modal="true" aria-labelledby="hk-modal-title">
+    <div class="view-head">
+      <div>
+        <h3 id="hk-modal-title">CHOOSE HOTKEY</h3>
+        <p class="sub" id="hk-modal-sub">SELECT A KEY FOR ACTION</p>
+      </div>
+      <button type="button" class="icon-btn" id="hk-modal-close" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="rule"></div>
+    <div class="hk-palette" id="hk-palette"></div>
+  </div>
+</div>
+
+<!-- Modifier Selector Modal -->
+<div class="scrim" id="mod-modal-scrim" hidden>
+  <div class="modal cut mod-modal" role="dialog" aria-modal="true" aria-labelledby="mod-modal-title">
+    <div class="view-head">
+      <div>
+        <div class="modal-brand-tag">MATCH DIFFICULTY</div>
+        <h3 id="mod-modal-title">SELECT GAME MODIFIERS</h3>
+        <p class="sub">CHOOSE CHALLENGE MODIFIERS TO VOTE DURING INTERMISSION</p>
+      </div>
+      <button type="button" class="icon-btn" id="mod-modal-close" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+
+    <div class="mod-summary-bar">
+      <div class="mod-sum-stat">
+        <span>ACTIVE MODIFIERS</span>
+        <b class="mono" id="mod-sum-count">2 / 2 SUPPORTED</b>
+      </div>
+      <div class="vr"></div>
+      <div class="mod-sum-stat">
+        <span>EST. REWARD BONUS</span>
+        <b class="red mono" id="mod-sum-bonus">+15% COINS (1.15x)</b>
+      </div>
+      <div class="grow"></div>
+      <div class="mod-quick-acts">
+        <button type="button" class="btn-ghost cut xs" id="mod-act-select-all">SELECT ALL</button>
+        <button type="button" class="btn-ghost cut xs" id="mod-act-clear">CLEAR</button>
+      </div>
+    </div>
+
+    <div class="rule"></div>
+
+    <div class="mod-catalog" id="mod-catalog"></div>
+
+    <div class="modal-actions" style="margin-top:16px">
+      <span class="mod-foot-note" id="mod-foot-note">2 modifiers will be voted in match lobby</span>
+      <div class="grow"></div>
+      <button type="button" class="btn cut sm" id="mod-btn-cancel">CANCEL</button>
+      <button type="button" class="btn cut sm primary" id="mod-btn-apply">APPLY MODIFIERS</button>
+    </div>
+  </div>
+</div>
+
+<!-- Task modal -->
+<div class="scrim" id="scrim" hidden>
+  <form class="modal cut" id="task-form" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h3 id="modal-title">ADD TASK</h3>
+    <label class="field"><span>Preset</span>
+      <select id="f-preset"></select>
+    </label>
+    <label class="field"><span>Name</span>
+      <input id="f-name" maxlength="48" autocomplete="off" required>
+    </label>
+    <div class="field"><span>Loops</span>
+      <div class="loops">
+        <button type="button" class="seg" id="f-inf" aria-pressed="true">∞ Infinite</button>
+        <button type="button" class="seg" id="f-fin" aria-pressed="false">Fixed</button>
+        <input type="number" id="f-loops" min="1" max="999" value="5" disabled aria-label="Number of runs">
+      </div>
+    </div>
+    <label class="field"><span>Scouts to place <b id="f-scouts-v">16</b></span>
+      <input type="range" id="f-scouts" min="10" max="20" step="1" value="16">
+    </label>
+    <div class="modal-actions">
+      <button type="button" class="link danger" id="f-del" hidden>Delete task</button>
+      <div class="grow"></div>
+      <button type="button" class="btn cut sm" id="f-cancel">CANCEL</button>
+      <button type="submit" class="btn cut sm primary">SAVE</button>
+    </div>
+  </form>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
