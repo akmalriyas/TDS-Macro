@@ -54,6 +54,23 @@ class Api:
 
     def stop(self) -> None:
         self._core.stop()
+        self.focus_ui()
+
+    def focus_ui(self) -> None:
+        """Bring the main Flare Macro window to the foreground."""
+        try:
+            if self._window is not None:
+                self._window.restore()
+        except Exception:
+            pass
+        try:
+            hwnd = win32gui.FindWindow(None, "Flare Macro - TDS")
+            if hwnd:
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                win32gui.BringWindowToTop(hwnd)
+                win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
 
     # queue
     def save_task(self, data: dict) -> None:
@@ -148,7 +165,13 @@ def _setup_hud_clickthrough() -> None:
             win32gui.SetWindowLong(
                 hwnd,
                 win32con.GWL_EXSTYLE,
-                ex | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_LAYERED | win32con.WS_EX_TOOLWINDOW,
+                ex | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_TOOLWINDOW | 0x08000000,
+            )
+            win32gui.SetWindowPos(
+                hwnd,
+                win32con.HWND_TOPMOST,
+                0, 0, 0, 0,
+                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE,
             )
     except Exception:
         pass
@@ -217,7 +240,7 @@ def launch_setup() -> int:
     api = SetupApi()
     screen_w = user32.GetSystemMetrics(0)
     screen_h = user32.GetSystemMetrics(1)
-    w, h = 640, 720
+    w, h = 720, 780
     x = max(0, (screen_w - w) // 2)
     y = max(0, (screen_h - h) // 2)
 
@@ -229,7 +252,7 @@ def launch_setup() -> int:
         height=h,
         x=x,
         y=y,
-        min_size=(600, 680),
+        min_size=(680, 720),
         frameless=True,
         easy_drag=False,
         background_color='#07080B',
@@ -277,6 +300,7 @@ def launch_ui(settings: Optional[RunSettings] = None) -> int:
     hud_window = webview.create_window(
         "Flare Macro HUD",
         url=str(WEB_DIR / "hud.html"),
+        js_api=api,
         width=hud_w,
         height=hud_h,
         x=hud_x,

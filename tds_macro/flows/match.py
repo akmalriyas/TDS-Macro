@@ -16,7 +16,7 @@ from ..runlog import RunRecord
 from ..state import State
 
 # Top-center region where "Ready? -> Yes" and "Skip Wave? -> Yes" prompts appear (2560x1440)
-TOP_PROMPT_REGION = (920, 65, 720, 235)
+TOP_PROMPT_REGION = (800, 50, 960, 360)
 
 # 20 Golden Scout placement coordinates along the road on Dead Ahead (2560x1440 overhead).
 # Left shoulder coordinates (x=1045, 945) and right median/shoulder coordinates (x=1390, 1490).
@@ -54,7 +54,7 @@ def get_top_prompt_region(frame: np.ndarray) -> tuple[int, int, int, int]:
     if w == 2560 and h == 1440:
         return TOP_PROMPT_REGION
     sx, sy = w / 2560.0, h / 1440.0
-    return (int(round(920 * sx)), int(round(65 * sy)), int(round(720 * sx)), int(round(235 * sy)))
+    return (int(round(800 * sx)), int(round(50 * sy)), int(round(960 * sx)), int(round(360 * sy)))
 
 
 def get_scout_slots(frame: np.ndarray) -> list[tuple[int, int]]:
@@ -85,7 +85,7 @@ def is_valid_placement_spot(frame: np.ndarray, x: int, y: int) -> bool:
     # In TDS, invalid spots show a distinctive bright neon-red pedestal:
     red_invalid_mask = (r > 130) & (r > (g * 1.30).astype(int)) & (r > (b * 1.30).astype(int))
     red_count = int(red_invalid_mask.sum())
-    return red_count < 60
+    return red_count < 100
 
 
 def _find_top_green_chevron(frame: np.ndarray) -> Optional[tuple[int, int]]:
@@ -111,21 +111,20 @@ def _find_top_green_chevron(frame: np.ndarray) -> Optional[tuple[int, int]]:
 
 
 def click_top_yes(m: Macro) -> bool:
-    """Click the green 'Ready' or 'Yes' button on the top-center banner.
+    """Click the green 'Ready' or 'Yes' or 'Skip' button on the top-center banner.
     Filters out road chevrons and health bars by checking button aspect ratio and skipping question titles."""
     frame = m.grab()
     region = get_top_prompt_region(frame)
 
-    # 1. Primary check: Green button on banner with horizontal aspect ratio (w/h >= 1.6, w >= 110)
-    # This specifically isolates the button (w=211, h=73, ratio=2.89) from road chevrons (w=68, h=73, ratio=0.93)
-    boxes = vision.find_green_buttons(frame, region, min_area=400, max_boxes=4)
+    # 1. Primary check: Green button on banner with horizontal aspect ratio (w/h >= 1.4, w >= 70)
+    boxes = vision.find_green_buttons(frame, region, min_area=300, max_boxes=6)
     for box in boxes:
         aspect = box.w / max(1, box.h)
-        if box.w >= 110 and 28 <= box.h <= 90 and aspect >= 1.6:
-            m.log(f"clicking top banner green button at {box.center} (ratio={aspect:.2f})", "cyan")
-            inp.click_box(box.tuple)
+        if box.w >= 70 and 22 <= box.h <= 100 and aspect >= 1.4:
+            m.log(f"clicking top banner green button at {box.center} (ratio={aspect:.2f}, {box.w}x{box.h})", "cyan")
+            inp.click_box(box.tuple, hold=0.06)
             m.touch()
-            time.sleep(0.08)
+            time.sleep(0.10)
             return True
 
     # 2. Secondary check: OCR text matching "ready" or "yes" or "skip", skipping question titles ("Ready?")
@@ -134,11 +133,11 @@ def click_top_yes(m: Macro) -> bool:
         if "?" in line.text or "required" in line.norm:
             continue
         norm = line.norm
-        if norm in ("ready", "yes", "skip") or norm.startswith("ready ") or norm == "ready!":
+        if norm in ("ready", "yes", "skip", "vote") or norm.startswith("ready") or norm.startswith("skip"):
             m.log(f"found top banner button '{line.text}' at {line.box.center}; clicking", "cyan")
-            inp.click(*line.box.center)
+            inp.click(line.box.center[0], line.box.center[1], hold=0.06)
             m.touch()
-            time.sleep(0.08)
+            time.sleep(0.10)
             return True
 
     return False
@@ -175,59 +174,72 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, i
     sx, sy = slot_xy
     search_offsets = [
         (0, 0),
-        (-20, 0),
-        (20, 0),
-        (0, -20),
-        (0, 20),
-        (-35, 0),
-        (35, 0),
-        (-20, -20),
-        (20, -20),
-        (-20, 20),
-        (20, 20),
+        (-25, 0),
+        (25, 0),
+        (0, -25),
+        (0, 25),
+        (-25, -25),
+        (25, -25),
+        (-25, 25),
+        (25, 25),
+        (-40, 0),
+        (40, 0),
     ]
-
-    m.press("1")
-    inp.click(1118, 1370, hold=0.04)
-    time.sleep(0.06)
 
     for ox, oy in search_offsets:
         tx, ty = sx + ox, sy + oy
+        m.check_interrupts()
+
+        # 1. Equip scout via '1'
+        m.press("1")
+        time.sleep(0.08)
+
+        # 2. Hover over candidate placement spot in 3D
         inp.move_to(tx, ty, is_3d=True)
-        time.sleep(0.06)
+        time.sleep(0.08)
+
         frame = m.grab()
-        if is_valid_placement_spot(frame, tx, ty):
-            cash_before = m.read_cash(frame)
-            t_before, _ = m.read_tower_count(frame)
+        if not is_valid_placement_spot(frame, tx, ty):
+            continue
 
-            inp.click_3d(tx, ty)
-            time.sleep(0.20)
+        cash_before = m.read_cash(frame)
+        t_before, _ = m.read_tower_count(frame)
 
+        # 3. Click to place in 3D
+        inp.click_3d(tx, ty, hold=0.06, settle=0.08)
+
+        # 4. Wait for server replication (up to 1.2s polling)
+        placed = False
+        deadline = time.time() + 1.2
+        while time.time() < deadline:
+            time.sleep(0.15)
             frame_after = m.grab()
             cash_after = m.read_cash(frame_after)
             t_after, _ = m.read_tower_count(frame_after)
 
-            # Verification: Cash dropped by >= $180, OR tower count incremented,
-            # OR if OCR didn't read cash, unobstructed slot click is accepted.
-            placed = False
-            if cash_before is not None and cash_after is not None and cash_after <= cash_before - 180:
+            if cash_before is not None and cash_after is not None and cash_after <= cash_before - 150:
                 placed = True
-            elif t_before is not None and t_after is not None and t_after > t_before:
+                break
+            if t_before is not None and t_after is not None and t_after > t_before:
                 placed = True
-            elif cash_before is None and cash_after is None:
-                placed = True
+                break
 
-            if placed:
-                m.log(f"VERIFIED: Scout placed at ({tx}, {ty}) [Cash: ${cash_before}->${cash_after}]", "green")
-                m.press("q")
-                time.sleep(0.05)
-                return (tx, ty)
-            else:
-                m.log(f"Placement click at ({tx}, {ty}) unverified; trying next offset", "dim")
+        if placed:
+            m.log(f"VERIFIED: Scout placed at ({tx}, {ty}) [Cash: ${cash_before}->${cash_after}, Towers: {t_before}->{t_after}]", "bold green")
+            m.press("q")
+            time.sleep(0.06)
+            return (tx, ty)
 
-    # If all offsets failed, deselect placement mode with 'q'
+        # Fallback: if cash/towers unreadable by OCR, accept spot click if unobstructed
+        if cash_before is None and t_before is None:
+            time.sleep(0.20)
+            m.press("q")
+            time.sleep(0.06)
+            return (tx, ty)
+
+    # Cancel placement mode if all offsets failed
     m.press("q")
-    time.sleep(0.05)
+    time.sleep(0.06)
     return None
 
 
@@ -291,8 +303,14 @@ def _upgrade_scout_at(m: Macro, scout: dict, presses: int = 1) -> bool:
         m.press("e")
         time.sleep(0.12)
 
-    time.sleep(0.35)  # Replication wait
-    cash_after = m.read_cash()
+    # Polling wait for server cash replication (up to 1.0s)
+    cash_after = None
+    deadline = time.time() + 1.0
+    while time.time() < deadline:
+        time.sleep(0.12)
+        cash_after = m.read_cash()
+        if cash_before is not None and cash_after is not None and cash_after < cash_before:
+            break
 
     # Step 3: Deselect with 'q'
     m.press("q")
@@ -447,16 +465,31 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
 
     # Click Ready? -> Yes to start Wave 1 with verification loop
     m.log("clicking Ready at top of screen to start Wave 1", "bold")
-    for attempt in range(8):
+    for attempt in range(6):
         m.check_interrupts()
+        # Check if already readied or match starting
+        frame = m.grab()
+        reg = get_top_prompt_region(frame)
+        lines = m.ocr.recognize(frame, reg)
+        text = " ".join(l.norm for l in lines)
+        if "1/1" in text or "unready" in text or "starting" in text or not any("ready" in l.norm for l in lines):
+            m.log("Wave 1 Ready confirmed (ready active or match starting)!", "bold green")
+            break
+
+        # Click ready button once
         if click_top_yes(m):
-            time.sleep(0.4)
-            if not click_top_yes(m):
-                m.log("Wave 1 Ready confirmed (prompt cleared)", "green")
+            m.log(f"Clicked Ready banner (attempt {attempt + 1})", "cyan")
+            time.sleep(0.50)
+            # Re-check frame without blindly clicking again
+            frame_after = m.grab()
+            lines_after = m.ocr.recognize(frame_after, reg)
+            text_after = " ".join(l.norm for l in lines_after)
+            if "1/1" in text_after or "unready" in text_after or "starting" in text_after or not any("ready" in l.norm for l in lines_after):
+                m.log("Wave 1 Ready confirmed!", "bold green")
                 break
         else:
-            m.click_text("yes", region=get_top_prompt_region(m.grab()), timeout=1.0)
-        time.sleep(0.3)
+            m.click_text("yes", region=reg, timeout=1.0)
+        time.sleep(0.40)
 
     # Wait for $250 to upgrade Scout 1 to Level 2
     m.log("waiting for $250 to upgrade Scout #1 to Level 2", "cyan")
@@ -531,7 +564,9 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
 
         if should_skip:
             if click_top_yes(m):
+                m.log("Skipped wave via top banner", "cyan")
                 last_skip_time = now
+                time.sleep(0.40)
 
         # Step A: Early Gauntlet Foundation - Place up to min(8, target_scouts)
         # Placing an army of 6 to 8 scouts early creates a continuous suppressive wall

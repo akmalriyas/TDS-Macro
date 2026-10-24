@@ -425,8 +425,8 @@ def select_modifiers(m: Macro) -> None:
 
     # Dynamic tile centers from modal base:
     # Row 0:
-    # Col 1 (Glass): base_x + 204, base_y + 214
-    # Col 2 (Bomb / Exploding Enemies): base_x + 316, base_y + 214
+    # Col 1 (Glass): base_x + 204, base_y + 214 (ref: 1106, 450)
+    # Col 2 (Bomb / Exploding Enemies): base_x + 316, base_y + 214 (ref: 1218, 450)
     dynamic_coords = {
         "glass": (base_x + 204, base_y + 214),
         "explosive": (base_x + 316, base_y + 214),
@@ -434,30 +434,52 @@ def select_modifiers(m: Macro) -> None:
         "bomb": (base_x + 316, base_y + 214),
     }
 
-    clicked = 0
-    for mod_name in targets:
-        coord = dynamic_coords.get(mod_name) or MODIFIER_COORDS.get(mod_name)
-        if not coord:
-            for k, c in dynamic_coords.items():
-                if k in mod_name or mod_name in k:
-                    coord = c
-                    break
-        if coord:
-            m.log(f"clicking modifier '{mod_name}' at {coord} (modal base: {base_x}, {base_y})", "cyan")
-            inp.click(*coord, hold=0.05, settle=0.20)
-            time.sleep(0.35)
-            m.focus()
-            clicked += 1
-        else:
-            m.log(f"modifier '{mod_name}' has no calibrated click coordinates; skipping click", "yellow")
+    target_count = len(targets)
+    for attempt in range(3):
+        m.check_interrupts()
+        # Click each modifier with adequate settle time
+        for mod_name in targets:
+            coord = dynamic_coords.get(mod_name) or MODIFIER_COORDS.get(mod_name)
+            if not coord:
+                for k, c in dynamic_coords.items():
+                    if k in mod_name or mod_name in k:
+                        coord = c
+                        break
+            if coord:
+                m.log(f"clicking modifier '{mod_name}' at {coord} (modal base: {base_x}, {base_y})", "cyan")
+                inp.click(coord[0], coord[1], hold=0.06, settle=0.30)
+                time.sleep(0.40)
+                m.focus()
+            else:
+                m.log(f"modifier '{mod_name}' has no calibrated click coordinates; skipping click", "yellow")
 
-    if clicked > 0:
-        time.sleep(0.5)
-        m.snap("modifier_selected")
-        # Verify the panel shows selected count; OCR may read "2/13" or "2 / 13".
-        lines = m.ocr.recognize(m.grab(), (base_x, base_y + 650, 700, 300))
-        text = " ".join(l.norm for l in lines)
-        m.log(f"selected modifiers text: {text}", "dim")
+        # Verify selected count: check "Selected Modifiers (2/13)" text at bottom of panel
+        time.sleep(0.50)
+        v_frame = m.grab()
+        v_lines = m.ocr.recognize(v_frame, (base_x, base_y + 600, 750, 350))
+        v_text = " ".join(l.norm for l in v_lines)
+        m.log(f"selected modifiers OCR text: {v_text}", "dim")
+
+        if f"{target_count}/13" in v_text or f"{target_count} / 13" in v_text or f"{target_count}/ 13" in v_text:
+            m.log(f"SUCCESS: All {target_count} modifiers selected ({target_count}/13)!", "bold green")
+            m.snap("modifier_selected")
+            return
+
+        # If only 1/13 is registered, retry clicking Exploding Enemies (Col 2)
+        if "1/13" in v_text or "1 / 13" in v_text:
+            m.log("Only 1 modifier selected (1/13); re-clicking Exploding Enemies tile", "yellow")
+            col2 = dynamic_coords.get("exploding enemies", (base_x + 316, base_y + 214))
+            inp.click(col2[0], col2[1], hold=0.06, settle=0.30)
+            time.sleep(0.40)
+            v_frame = m.grab()
+            v_lines = m.ocr.recognize(v_frame, (base_x, base_y + 600, 750, 350))
+            v_text = " ".join(l.norm for l in v_lines)
+            if f"{target_count}/13" in v_text or f"{target_count} / 13" in v_text:
+                m.log(f"SUCCESS: All {target_count} modifiers selected ({target_count}/13)!", "bold green")
+                m.snap("modifier_selected")
+                return
+
+    m.snap("modifier_selected")
 
 
 def vote_modifiers(m: Macro) -> None:

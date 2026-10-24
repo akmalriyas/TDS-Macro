@@ -112,6 +112,7 @@ class Core:
 
     def toggle_hud(self) -> None:
         self.settings.show_hud = not self.settings.show_hud
+        self.set_hud_visible(self.settings.show_hud)
         self.save_settings({"show_hud": self.settings.show_hud})
 
     def set_hud_visible(self, visible: bool) -> None:
@@ -144,7 +145,7 @@ class Core:
             pass
 
     def sync_hud(self, state_dict: dict) -> None:
-        if self.hud_window is not None and getattr(self.settings, "show_hud", True):
+        if self.hud_window is not None:
             try:
                 payload = json.dumps(state_dict)
                 self.hud_window.evaluate_js(f"updateHud({payload})")
@@ -204,6 +205,25 @@ class Core:
             self.macro.stop_requested = True
             self.macro.paused = False
             self.macro.log("stop requested", "red")
+        self.focus_window()
+
+    def focus_window(self) -> None:
+        """Bring the Flare Macro window to the foreground."""
+        try:
+            if self.window is not None:
+                self.window.restore()
+        except Exception:
+            pass
+        try:
+            import win32con
+            import win32gui
+            hwnd = win32gui.FindWindow(None, "Flare Macro - TDS")
+            if hwnd:
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                win32gui.BringWindowToTop(hwnd)
+                win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
 
     def _apply_task(self, task: QueueTask) -> None:
         spec = task.spec
@@ -252,11 +272,7 @@ class Core:
                 self._sync_task(active)
             self.active_id = None
             self.status = "IDLE"
-            if self.settings.minimize_on_start and self.window is not None:
-                try:
-                    self.window.restore()
-                except Exception:
-                    pass
+            self.focus_window()
             try:
                 m.close()
             except Exception:

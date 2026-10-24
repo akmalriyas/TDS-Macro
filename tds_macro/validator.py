@@ -169,6 +169,23 @@ def _check_capture() -> CheckItem:
                 status="PASS",
                 detail=f"{method} capture active ({frame.shape[1]}x{frame.shape[0]})",
             )
+    except Exception:
+        pass
+
+    try:
+        from PIL import ImageGrab
+
+        test_frame = ImageGrab.grab()
+        if test_frame is not None and test_frame.size[0] > 0:
+            return CheckItem(
+                id="capture",
+                name="Screen Capture Pipeline",
+                category="Diagnostics",
+                passed=True,
+                critical=True,
+                status="PASS",
+                detail=f"Desktop capture active ({test_frame.size[0]}x{test_frame.size[1]})",
+            )
     except Exception as exc:
         return CheckItem(
             id="capture",
@@ -179,6 +196,7 @@ def _check_capture() -> CheckItem:
             status="FAIL",
             detail=f"Capture pipeline failed: {exc}",
         )
+
     return CheckItem(
         id="capture",
         name="Screen Capture Pipeline",

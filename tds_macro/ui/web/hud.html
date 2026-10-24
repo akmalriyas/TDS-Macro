@@ -162,6 +162,20 @@ window.updateHud = function(s) {
     if (s.hotkeys.stop && $("#h-k-stop")) $("#h-k-stop").textContent = s.hotkeys.stop;
   }
 };
+
+// Independent client-side polling so HUD continuously syncs even without Python push
+window.addEventListener("pywebviewready", () => {
+  async function poll() {
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.get_state) {
+        const s = await window.pywebview.api.get_state();
+        window.updateHud(s);
+      }
+    } catch (e) {}
+    setTimeout(poll, 400);
+  }
+  poll();
+});
 </script>
 </body>
 </html>

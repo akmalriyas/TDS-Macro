@@ -795,10 +795,12 @@ function showUpdateModal(u) {
   const scrim = $("#update-modal-scrim");
   if (!scrim) return;
 
-  $("#update-modal-tag").textContent = u.is_major ? "MAJOR SOFTWARE UPDATE" : "SOFTWARE UPDATE";
+  $("#update-modal-tag").textContent = u.is_major ? "MAJOR SOFTWARE UPDATE" : "SOFTWARE UPDATE AVAILABLE";
   $("#update-modal-title").textContent = `v${u.latest_version} AVAILABLE`;
-  $("#update-modal-sub").textContent = u.title || `Release ${u.tag}`;
+  $("#update-modal-sub").textContent = "WOULD YOU LIKE TO UPDATE RIGHT NOW?";
   $("#update-notes-content").textContent = u.notes || "No release notes available.";
+  const btn = $("#update-btn-download");
+  if (btn) btn.textContent = "UPDATE NOW";
   scrim.hidden = false;
 }
 
@@ -828,7 +830,7 @@ $("#update-btn-download")?.addEventListener("click", async () => {
     toast("Download error: " + e);
   } finally {
     btn.disabled = false;
-    btn.textContent = "DOWNLOAD & UPDATE";
+    btn.textContent = "UPDATE NOW";
   }
 });
 
@@ -844,14 +846,13 @@ async function checkForUpdates(manual = false) {
     const badge = $("#update-badge");
     const badgeText = $("#update-badge-text");
     if (badge && badgeText) {
-      badgeText.textContent = `v${res.latest_version}`;
+      badgeText.textContent = `UPDATE TO v${res.latest_version}`;
       badge.hidden = false;
       badge.onclick = () => showUpdateModal(res);
     }
 
-    if (res.is_major || manual) {
-      showUpdateModal(res);
-    }
+    // Automatically prompt the user to update right now!
+    showUpdateModal(res);
   } catch (e) {
     if (manual) toast("Failed to check for updates: " + e);
   }
