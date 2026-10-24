@@ -26,3 +26,9 @@ scratch/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Handoff / local agent notes
+HANDOFF.md
+handoff.md
+*.handoff.md
+
