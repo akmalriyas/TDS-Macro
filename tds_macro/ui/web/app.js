@@ -141,10 +141,6 @@ function openModal(task) {
   sel.value = task ? task.preset : Object.keys(presets)[0];
   const spec = presets[sel.value] || { label: "Dead Ahead Coin Farm", max_scouts: 20, default_scouts: 16 };
   $("#f-name").value = task ? task.name : spec.label;
-  const sc = $("#f-scouts");
-  sc.max = spec.max_scouts;
-  sc.value = task ? task.scout_count : spec.default_scouts;
-  $("#f-scouts-v").textContent = sc.value;
   setLoops(!task || !task.loop_count, task && task.loop_count);
   $("#f-del").hidden = !task;
   $("#scrim").hidden = false;
@@ -155,7 +151,6 @@ const closeModal = () => ($("#scrim").hidden = true);
 $("#add-task").addEventListener("click", () => openModal(null));
 $("#f-cancel").addEventListener("click", closeModal);
 $("#scrim").addEventListener("mousedown", (e) => { if (e.target.id === "scrim") closeModal(); });
-$("#f-scouts").addEventListener("input", (e) => ($("#f-scouts-v").textContent = e.target.value));
 $("#f-inf").addEventListener("click", () => setLoops(true));
 $("#f-fin").addEventListener("click", () => { setLoops(false); $("#f-loops").focus(); });
 $("#f-preset").addEventListener("change", (e) => {
@@ -171,12 +166,14 @@ $("#f-del").addEventListener("click", () => {
 $("#task-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const infinite = $("#f-inf").getAttribute("aria-pressed") === "true";
+  const pVal = $("#f-preset").value;
+  const spec = presets[pVal] || { default_scouts: 16 };
   await api.save_task({
     id: editing ? editing.id : undefined,
-    preset: $("#f-preset").value,
+    preset: pVal,
     name: $("#f-name").value,
     loop_count: infinite ? 0 : Math.max(1, parseInt($("#f-loops").value, 10) || 1),
-    scout_count: parseInt($("#f-scouts").value, 10),
+    scout_count: (editing && editing.scout_count) || spec.default_scouts || 16,
   });
   closeModal();
   refresh();
@@ -820,8 +817,10 @@ $("#update-btn-download")?.addEventListener("click", async () => {
   try {
     const res = await api.download_update(pendingUpdate.download_url);
     if (res.ok) {
-      toast("Update downloaded! Opening installer...");
+      toast("Update downloaded! Launching installer...");
       $("#update-modal-scrim").hidden = true;
+      await api.install_update(res.path);
+      setTimeout(() => api.win_close(), 1200);
     } else {
       toast("Download failed: " + (res.error || "Unknown"));
     }

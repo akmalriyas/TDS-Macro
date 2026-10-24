@@ -24,8 +24,8 @@ extra_hiddenimports = [
 extra_hiddenimports += collect_submodules('winrt')
 extra_hiddenimports += collect_submodules('tds_macro')
 
-# Collect all binaries, datas, and hidden imports for pythonnet, clr_loader, and webview
-for pkg in ['pythonnet', 'clr_loader', 'webview']:
+# Collect all binaries, datas, and hidden imports for pythonnet, clr_loader, webview, and dxcam
+for pkg in ['pythonnet', 'clr_loader', 'webview', 'dxcam']:
     d, b, h = collect_all(pkg)
     extra_datas.extend(d)
     extra_binaries.extend(b)

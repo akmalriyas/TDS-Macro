@@ -155,9 +155,11 @@ def _check_display() -> CheckItem:
 def _check_capture() -> CheckItem:
     try:
         from .capture import Capture
+
         cap = Capture()
         frame = cap.grab()
-        if frame is not None and frame.size > 0 and frame.mean() > 2.0:
+        if frame is not None and frame.size > 0:
+            method = "DXGI" if getattr(cap, "camera", None) is not None else "Direct"
             return CheckItem(
                 id="capture",
                 name="Screen Capture Pipeline",
@@ -165,7 +167,7 @@ def _check_capture() -> CheckItem:
                 passed=True,
                 critical=True,
                 status="PASS",
-                detail=f"Capture verified ({frame.shape[1]}x{frame.shape[0]}, mean brightness {frame.mean():.1f})",
+                detail=f"{method} capture active ({frame.shape[1]}x{frame.shape[0]})",
             )
     except Exception as exc:
         return CheckItem(

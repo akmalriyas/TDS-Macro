@@ -428,6 +428,10 @@ class Core:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def install_update(self, path: str) -> dict:
+        from .. import updater
+        return updater.install_update(path)
+
     # ----------------------------------------------------------------- window
     def shutdown(self) -> None:
         self.stop()

@@ -95,16 +95,25 @@ class Capture:
     def __init__(self, output_idx: int = 0):
         _ensure_default_desktop()
         ensure_dpi_aware()
-        import dxcam
-
-        self._dxcam = dxcam
         self.output_idx = output_idx
         self.target_hwnd: Optional[int] = None
-        self.camera = _SHARED_CAMERAS.get(output_idx)
-        if self.camera is None:
-            self._create()
+        self._dxcam = None
+        self.camera = None
+
+        try:
+            import dxcam
+
+            self._dxcam = dxcam
+            self.camera = _SHARED_CAMERAS.get(output_idx)
+            if self.camera is None:
+                self._create()
+        except Exception:
+            self._dxcam = None
+            self.camera = None
 
     def _create(self) -> None:
+        if not self._dxcam:
+            return
         ensure_dpi_aware()
         existing = _SHARED_CAMERAS.get(self.output_idx)
         if existing is not None:
@@ -117,9 +126,8 @@ class Capture:
             self.camera = self._dxcam.create(output_idx=self.output_idx)
         except Exception:
             self.camera = None
-        if self.camera is None:
-            raise RuntimeError("dxcam could not create a capture device")
-        _SHARED_CAMERAS[self.output_idx] = self.camera
+        if self.camera is not None:
+            _SHARED_CAMERAS[self.output_idx] = self.camera
 
     def grab(self, retries: int = 8, hwnd: Optional[int] = None) -> np.ndarray:
         """Return the current frame as a BGR uint8 array (H, W, 3).
@@ -151,42 +159,65 @@ class Capture:
         # 2. Desktop fallback via DXGI Desktop Duplication
         from . import viewport
 
-        for _ in range(retries):
-            try:
-                frame = self.camera.grab()
-            except Exception:
-                frame = None
-            if frame is not None:
-                # dxcam returns RGB; OpenCV uses BGR.
-                bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                if target_hwnd:
-                    vp = viewport.client_viewport(target_hwnd)
-                    if vp and 0 <= vp.left and 0 <= vp.top and vp.left + vp.width <= bgr.shape[1] and vp.top + vp.height <= bgr.shape[0]:
-                        bgr = bgr[vp.top:vp.top + vp.height, vp.left:vp.left + vp.width]
-                        viewport.set_viewport(vp)
-                norm = viewport.normalize_frame(bgr)
-                _LAST_FRAMES[self.output_idx] = norm
-                return norm
-            time.sleep(0.02)
+        if self.camera is not None:
+            for _ in range(retries):
+                try:
+                    frame = self.camera.grab()
+                except Exception:
+                    frame = None
+                if frame is not None:
+                    # dxcam returns RGB; OpenCV uses BGR.
+                    bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    if target_hwnd:
+                        vp = viewport.client_viewport(target_hwnd)
+                        if vp and 0 <= vp.left and 0 <= vp.top and vp.left + vp.width <= bgr.shape[1] and vp.top + vp.height <= bgr.shape[0]:
+                            bgr = bgr[vp.top:vp.top + vp.height, vp.left:vp.left + vp.width]
+                            viewport.set_viewport(vp)
+                    norm = viewport.normalize_frame(bgr)
+                    _LAST_FRAMES[self.output_idx] = norm
+                    return norm
+                time.sleep(0.02)
+
+        # 3. Fallback: PIL ImageGrab (always available on Windows)
+        try:
+            from PIL import ImageGrab
+
+            pil_frame = ImageGrab.grab()
+            bgr = cv2.cvtColor(np.array(pil_frame), cv2.COLOR_RGB2BGR)
+            if target_hwnd:
+                vp = viewport.client_viewport(target_hwnd)
+                if vp and 0 <= vp.left and 0 <= vp.top and vp.left + vp.width <= bgr.shape[1] and vp.top + vp.height <= bgr.shape[0]:
+                    bgr = bgr[vp.top:vp.top + vp.height, vp.left:vp.left + vp.width]
+                    viewport.set_viewport(vp)
+            norm = viewport.normalize_frame(bgr)
+            _LAST_FRAMES[self.output_idx] = norm
+            return norm
+        except Exception:
+            pass
+
         # If the screen is completely static, DXGI Desktop Duplication returns None;
         # return the last cached frame if available before recreating the device.
         cached = _LAST_FRAMES.get(self.output_idx)
         if cached is not None:
             return cached.copy()
+
         # Last resort: recreate the device (display mode change etc.)
-        self._create()
-        frame = self.camera.grab()
-        if frame is None:
-            raise RuntimeError("screen capture returned no frame")
-        bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        if target_hwnd:
-            vp = viewport.client_viewport(target_hwnd)
-            if vp and 0 <= vp.left and 0 <= vp.top and vp.left + vp.width <= bgr.shape[1] and vp.top + vp.height <= bgr.shape[0]:
-                bgr = bgr[vp.top:vp.top + vp.height, vp.left:vp.left + vp.width]
-                viewport.set_viewport(vp)
-        norm = viewport.normalize_frame(bgr)
-        _LAST_FRAMES[self.output_idx] = norm
-        return norm
+        if self._dxcam:
+            self._create()
+            if self.camera is not None:
+                frame = self.camera.grab()
+                if frame is not None:
+                    bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    if target_hwnd:
+                        vp = viewport.client_viewport(target_hwnd)
+                        if vp and 0 <= vp.left and 0 <= vp.top and vp.left + vp.width <= bgr.shape[1] and vp.top + vp.height <= bgr.shape[0]:
+                            bgr = bgr[vp.top:vp.top + vp.height, vp.left:vp.left + vp.width]
+                            viewport.set_viewport(vp)
+                    norm = viewport.normalize_frame(bgr)
+                    _LAST_FRAMES[self.output_idx] = norm
+                    return norm
+
+        raise RuntimeError("screen capture returned no frame")
 
     def grab_pil(self):
         from PIL import Image

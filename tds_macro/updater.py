@@ -119,3 +119,25 @@ def download_update(url: str, progress_cb: Optional[Callable[[int, int], None]] 
                     progress_cb(downloaded, total)
 
     return target_path
+
+
+def install_update(file_path: Path | str) -> dict:
+    """Launch the downloaded installer or open the folder containing the update."""
+    path = Path(file_path)
+    if not path.exists():
+        return {"ok": False, "error": f"File does not exist: {path}"}
+    try:
+        import os
+        import subprocess
+
+        if path.suffix.lower() == ".exe":
+            os.startfile(str(path))
+            return {"ok": True, "action": "installer_started", "path": str(path)}
+        elif path.suffix.lower() == ".zip":
+            subprocess.Popen(["explorer.exe", f"/select,{path}"])
+            return {"ok": True, "action": "folder_opened", "path": str(path)}
+        else:
+            os.startfile(str(path))
+            return {"ok": True, "action": "file_opened", "path": str(path)}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}

@@ -105,6 +105,9 @@ class Api:
     def download_update(self, url: str) -> dict:
         return self._core.download_update(url)
 
+    def install_update(self, path: str) -> dict:
+        return self._core.install_update(path)
+
     def relaunch_setup(self) -> None:
         import threading
         _relaunch_setup()
@@ -212,13 +215,21 @@ def launch_setup() -> int:
             user32.SetForegroundWindow(existing)
         return 0
     api = SetupApi()
+    screen_w = user32.GetSystemMetrics(0)
+    screen_h = user32.GetSystemMetrics(1)
+    w, h = 640, 720
+    x = max(0, (screen_w - w) // 2)
+    y = max(0, (screen_h - h) // 2)
+
     window = webview.create_window(
         'Flare Macro - Setup',
         url=str(WEB_DIR / 'setup.html'),
         js_api=api,
-        width=580,
-        height=660,
-        min_size=(540, 600),
+        width=w,
+        height=h,
+        x=x,
+        y=y,
+        min_size=(600, 680),
         frameless=True,
         easy_drag=False,
         background_color='#07080B',
