@@ -326,32 +326,57 @@ class Macro:
         self.notify_status()
         return coins, gems
 
-    def read_cash(self, frame: Optional[np.ndarray] = None) -> Optional[int]:
-        """Read current cash from HUD.
-        In TDS v2.15, exact player cash is displayed just to the right of the bottom hotbar
-        at (1510..1610, 1355..1395) directly above the tower count (0/41).
-        Top-right leaderboard also displays cash (e.g. '$4.13K') under the player's name.
-        """
+    def read_bottom_hud(self, frame: Optional[np.ndarray] = None) -> tuple[Optional[int], tuple[Optional[int], Optional[int]]]:
+        """Read exact cash and placed tower count simultaneously from bottom hotbar HUD."""
         frame = self.grab() if frame is None else frame
-        # 1. Exact bottom-right HUD cash display (x=1470..1640, y=1330..1420) - exact dollar amount ($4,127)
-        # Upscale 2x for flawless digit recognition (preventing '2'/'7' mistaking for '1')
         h, w = frame.shape[:2]
-        y1, y2 = max(0, 1330), min(h, 1420)
-        x1, x2 = max(0, 1470), min(w, 1640)
+        y1, y2 = max(0, 1320), min(h, 1425)
+        x1, x2 = max(0, 1460), min(w, 1660)
         crop = frame[y1:y2, x1:x2]
+        cash = None
+        towers = (None, None)
+
         if crop.size > 0:
             import cv2
-            crop_2x = cv2.resize(crop, (0, 0), fx=2.0, fy=2.0)
-            bottom_lines = self.ocr.recognize(crop_2x)
-            for line in bottom_lines:
-                if "$" in line.text:
-                    v = parse_int(line.text)
-                    if v is not None and v >= 0:
-                        self.current_cash = v
-                        self.notify_status()
-                        return v
+            crop_2x = cv2.resize(crop, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+            lines = self.ocr.recognize(crop_2x)
 
-        # 2. Top-right player cash display (x=2440..2555, y=90..170)
+            # 1. Tower count parser (e.g. '0/41', '1/41', '6/41', '18/41', 'o ; 41')
+            for line in lines:
+                clean = re.sub(r"[oO]", "0", line.text)
+                m = re.search(r"(\d{1,2})\s*[/@|;:!1\s]\s*(4[01])", clean)
+                if m:
+                    towers = (int(m.group(1)), int(m.group(2)))
+                    self.scouts_placed = max(self.scouts_placed, towers[0])
+                    break
+
+            # 2. Cash parser (handles $, s, S, +, and digit rows)
+            for line in lines:
+                text = line.text.strip()
+                if towers[0] is not None and str(towers[1]) in text:
+                    continue
+                clean = re.sub(r"^[sS+¢&]+\s*", "$", text).replace(",", "")
+                m = re.search(r"(?:\$|s|\+)?\s*(\d+)", clean)
+                if m:
+                    v = int(m.group(1))
+                    if v not in (40, 41) and 0 <= v <= 999999:
+                        cash = v
+                        self.current_cash = v
+                        break
+
+        if cash is not None or towers[0] is not None:
+            self.notify_status()
+
+        return cash, towers
+
+    def read_cash(self, frame: Optional[np.ndarray] = None) -> Optional[int]:
+        """Read current cash from HUD. Checks bottom hotbar first, then top-right leaderboard."""
+        frame = self.grab() if frame is None else frame
+        cash, _ = self.read_bottom_hud(frame)
+        if cash is not None:
+            return cash
+
+        # Top-right player cash display fallback (x=2440..2555, y=90..170)
         top_right_lines = self.ocr.recognize(frame, (2440, 90, 120, 80))
         for line in top_right_lines:
             v = parse_int(line.text)
@@ -360,7 +385,6 @@ class Macro:
                 self.notify_status()
                 return v
 
-        # 3. Broader top-right region if player list shifted
         top_right_broader = self.ocr.recognize(frame, (2400, 70, 160, 200))
         for line in top_right_broader:
             if "$" in line.text or "k" in line.text.lower():
@@ -370,15 +394,20 @@ class Macro:
                     self.notify_status()
                     return v
 
-        return None
+        return self.current_cash
 
     def read_tower_count(self, frame: Optional[np.ndarray] = None) -> tuple[Optional[int], Optional[int]]:
-        """Read the '10 / 41' placed tower counter next to the bottom hotbar."""
+        """Read placed tower counter (e.g. 10/41) next to the bottom hotbar."""
         frame = self.grab() if frame is None else frame
-        for roi in ((1480, 1380, 200, 60), (1380, 1280, 1180, 160)):
+        _, towers = self.read_bottom_hud(frame)
+        if towers[0] is not None:
+            return towers
+
+        for roi in ((1460, 1330, 200, 105), (1380, 1280, 1180, 160)):
             lines = self.ocr.recognize(frame, roi)
             for line in lines:
-                m = re.search(r"(\d{1,2})\s*[/@|1]\s*(\d{2})", line.text)
+                clean = re.sub(r"[oO]", "0", line.text)
+                m = re.search(r"(\d{1,2})\s*[/@|;:!1\s]\s*(4[01])", clean)
                 if m:
                     placed, cap = int(m.group(1)), int(m.group(2))
                     self.scouts_placed = max(self.scouts_placed, placed)

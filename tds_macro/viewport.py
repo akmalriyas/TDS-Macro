@@ -138,6 +138,20 @@ def to_screen_3d(x: float, y: float) -> tuple[int, int]:
     )
 
 
+def to_frame_coord_3d(x: float, y: float) -> tuple[int, int]:
+    """Map a 3D reference coordinate to its corresponding pixel in the normalized (2560x1440) frame.
+    Accounts for non-16:9 client aspect ratios (e.g. windowed 1080p)."""
+    vp = current()
+    scale = vp.height / float(REF_H)
+    x_client = (vp.width / 2.0) + (x - (REF_W / 2.0)) * scale
+    y_client = (vp.height / 2.0) + (y - (REF_H / 2.0)) * scale
+    return (
+        int(round(x_client * (REF_W / float(vp.width)))),
+        int(round(y_client * (REF_H / float(vp.height)))),
+    )
+
+
+
 def scale_delta(dx: float, dy: float) -> tuple[int, int]:
     """Scale a reference-space distance (UI drags) to physical pixels."""
     vp = current()

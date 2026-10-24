@@ -102,16 +102,12 @@ class RunSettings:
 
     def load_persisted(self) -> RunSettings:
         """Load user-configured settings from ui_settings.json if present."""
-        import json
-        settings_file = SETTINGS_FILE
-        if settings_file.is_file():
-            try:
-                data = json.loads(settings_file.read_text(encoding="utf-8"))
-                for k, v in data.items():
-                    if hasattr(self, k):
-                        if k == "modifiers" and isinstance(v, (list, tuple)):
-                            v = tuple(v)
-                        setattr(self, k, v)
-            except Exception:
-                pass
+        from .paths import SETTINGS_FILE, safe_read_json
+        data = safe_read_json(SETTINGS_FILE)
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if hasattr(self, k):
+                    if k == "modifiers" and isinstance(v, (list, tuple)):
+                        v = tuple(v)
+                    setattr(self, k, v)
         return self

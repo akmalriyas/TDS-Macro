@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .paths import QUEUE_FILE
+from .paths import QUEUE_FILE, atomic_write_json, safe_read_json
 
 # Presets the engine can actually run end to end. Add an entry here once a new flow exists.
 PRESETS: dict[str, dict] = {
@@ -70,21 +70,28 @@ class TaskQueue:
 
     # ------------------------------------------------------------ persistence
     def load(self) -> None:
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            self.tasks = [QueueTask.from_dict(t) for t in data.get("tasks", [])]
-        except Exception:
+        data = safe_read_json(self.path)
+        if isinstance(data, dict):
+            raw_tasks = data.get("tasks", [])
+            self.tasks = [QueueTask.from_dict(t) for t in raw_tasks if isinstance(t, dict)]
+        else:
             self.tasks = []
-        pass
+
+        # Auto-seed default task if queue is completely empty
+        if not self.tasks:
+            self.tasks = [
+                QueueTask(
+                    preset="dead_ahead_coin_farm",
+                    name="Dead Ahead Coin Farm",
+                    loop_count=0,
+                    scout_count=16,
+                )
+            ]
+            self.save()
 
     def save(self) -> None:
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(
-                json.dumps({"tasks": [asdict(t) for t in self.tasks]}, indent=2), encoding="utf-8"
-            )
-        except Exception:
-            pass
+        payload = {"tasks": [asdict(t) for t in self.tasks]}
+        atomic_write_json(self.path, payload)
 
     # ---------------------------------------------------------------- queries
     def get(self, task_id: str) -> Optional[QueueTask]:

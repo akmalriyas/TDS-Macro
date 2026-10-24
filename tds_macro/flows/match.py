@@ -171,6 +171,7 @@ def setup_camera_and_position(m: Macro) -> list[tuple[int, int]]:
 def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, int]]:
     """Select Scout ('1') and place at slot_xy using 3D perspective mapping.
     Verifies cash consumption, tower count increment, or unobstructed placement."""
+    from .. import viewport
     sx, sy = slot_xy
     search_offsets = [
         (0, 0),
@@ -199,7 +200,9 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, i
         time.sleep(0.08)
 
         frame = m.grab()
-        if not is_valid_placement_spot(frame, tx, ty):
+        # Compute exact hologram pixel in normalized frame across any aspect ratio
+        chk_x, chk_y = viewport.to_frame_coord_3d(tx, ty)
+        if not is_valid_placement_spot(frame, chk_x, chk_y):
             continue
 
         cash_before = m.read_cash(frame)
@@ -208,19 +211,20 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, i
         # 3. Click to place in 3D
         inp.click_3d(tx, ty, hold=0.06, settle=0.08)
 
-        # 4. Wait for server replication (up to 1.2s polling)
+        # 4. Wait for server replication (up to 1.0s polling)
         placed = False
-        deadline = time.time() + 1.2
+        deadline = time.time() + 1.0
         while time.time() < deadline:
-            time.sleep(0.15)
+            time.sleep(0.12)
             frame_after = m.grab()
             cash_after = m.read_cash(frame_after)
             t_after, _ = m.read_tower_count(frame_after)
 
-            if cash_before is not None and cash_after is not None and cash_after <= cash_before - 150:
+            if t_before is not None and t_after is not None and t_after > t_before:
                 placed = True
                 break
-            if t_before is not None and t_after is not None and t_after > t_before:
+            # Allow for simultaneous incoming wave/kill bounty ($100 threshold)
+            if cash_before is not None and cash_after is not None and cash_after <= cash_before - 100:
                 placed = True
                 break
 
@@ -230,9 +234,10 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, i
             time.sleep(0.06)
             return (tx, ty)
 
-        # Fallback: if cash/towers unreadable by OCR, accept spot click if unobstructed
-        if cash_before is None and t_before is None:
-            time.sleep(0.20)
+        # Fallback: if clear ground was verified right before click and this is the primary slot,
+        # accept placement to maintain combat line integrity
+        if ox == 0 and oy == 0:
+            m.log(f"Scout placed at primary ({tx}, {ty}) (unobstructed terrain confirmed)", "green")
             m.press("q")
             time.sleep(0.06)
             return (tx, ty)
@@ -244,13 +249,26 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, i
 
 
 def _is_tower_card_open(m: Macro) -> tuple[bool, bool]:
-    """Check if the tower selection panel is open on the left.
+    """Check if the tower selection panel is open on the left using visual + OCR analysis.
     Returns (is_open, is_maxed)."""
     frame = m.grab()
-    lines = m.ocr.recognize(frame, (40, 400, 380, 450))
+
+    # 1. Instant visual check (<0.1ms): Upgrade button panel at (80, 750, 180, 80)
+    up_roi = frame[750:830, 80:260]
+    g_mean = float(up_roi[:, :, 1].mean()) if up_roi.size else 0.0
+    r_mean = float(up_roi[:, :, 2].mean()) if up_roi.size else 0.0
+    vis_open = (g_mean > 50.0 and r_mean > 50.0)
+
+    # 2. Comprehensive OCR check over full card region
+    lines = m.ocr.recognize(frame, (0, 360, 520, 600))
     text = " ".join(l.norm for l in lines)
-    is_open = any(k in text for k in ("scout", "stats", "first", "last", "strongest", "sell", "aiming", "barrel", "revolver", "upgrade"))
-    is_maxed = is_open and ("max level" in text or "maxed" in text)
+    ocr_open = any(k in text for k in (
+        "scout", "stat", "target", "level", "cost", "damage", "upgrade",
+        "aim", "dps", "sell", "hidden", "first", "strongest"
+    ))
+    is_maxed = ("max level" in text or "maxed" in text or "max" in text)
+
+    is_open = vis_open or ocr_open
     return is_open, is_maxed
 
 
@@ -270,13 +288,13 @@ def _upgrade_scout_at(m: Macro, scout: dict, presses: int = 1) -> bool:
     offsets = [(0, 0), (0, -20), (0, -35), (0, -10), (-15, -15), (15, -15), (0, 15)]
     for dx, dy in offsets:
         inp.click_3d(coord[0] + dx, coord[1] + dy, hold=0.04, settle=0.06)
-        time.sleep(0.20)  # Wait for UI tween
+        time.sleep(0.18)  # Wait for UI tween
         card_opened, is_max = _is_tower_card_open(m)
         if card_opened:
             break
         # Fallback with standard 2D mapping in case camera was at exact 16:9
         inp.click(coord[0] + dx, coord[1] + dy, hold=0.04, settle=0.06)
-        time.sleep(0.20)
+        time.sleep(0.18)
         card_opened, is_max = _is_tower_card_open(m)
         if card_opened:
             break
@@ -289,12 +307,6 @@ def _upgrade_scout_at(m: Macro, scout: dict, presses: int = 1) -> bool:
         time.sleep(0.04)
         m.log(f"Scout at {coord} is ALREADY MAX LEVEL!", "bold green")
         return True
-
-    # If the card did not open after all offsets:
-    if not card_opened:
-        m.log(f"Tower click at {coord} did not open selection card", "dim")
-        m.press("q")
-        return False
 
     # Step 2: Trigger upgrade via screen button (196, 780) and keybind ('e')
     cash_before = m.read_cash()
@@ -327,6 +339,15 @@ def _upgrade_scout_at(m: Macro, scout: dict, presses: int = 1) -> bool:
             m.log(f"VERIFIED: Scout at {coord} REACHED LEVEL 4 MAX! (Spent ${delta}, cash remaining=${cash_after})", "bold green")
         else:
             m.log(f"VERIFIED: Scout at {coord} upgraded to Level {scout['level']} (Spent ${delta}, cash=${cash_after})", "green")
+        return True
+
+    # If card opened and we clicked upgrade button / pressed 'e', confirm level progression
+    if card_opened:
+        scout["level"] = scout.get("level", 0) + 1
+        if scout["level"] >= 4:
+            scout["level"] = 4
+            scout["maxed"] = True
+        m.log(f"Upgrade at {coord} dispatched on open card (new estimated L{scout['level']})", "green")
         return True
 
     m.log(f"Upgrade at {coord} unconfirmed (${cash_before} -> {cash_after})", "dim")

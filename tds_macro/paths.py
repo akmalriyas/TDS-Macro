@@ -77,3 +77,49 @@ try:
     migrate_local_data()
 except Exception:
     pass
+
+
+def atomic_write_json(path: Path | str, data: dict | list) -> bool:
+    """Safely write JSON data using an atomic rename to prevent 0-byte or corrupted files."""
+    import json
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    temp_p = p.with_suffix(f".tmp.{os.getpid()}")
+    try:
+        temp_p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        os.replace(temp_p, p)
+        return True
+    except Exception:
+        try:
+            p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            return True
+        except Exception:
+            return False
+        finally:
+            if temp_p.exists():
+                try:
+                    temp_p.unlink()
+                except Exception:
+                    pass
+
+
+def safe_read_json(path: Path | str) -> Optional[dict | list]:
+    """Safely read and parse a JSON file, returning None if missing, empty, or corrupted."""
+    import json
+    p = Path(path)
+    if not p.is_file():
+        return None
+    try:
+        content = p.read_text(encoding="utf-8").strip()
+        if not content:
+            return None
+        return json.loads(content)
+    except Exception:
+        # Move corrupted file aside so subsequent boots start cleanly
+        try:
+            corrupt = p.with_suffix(".json.corrupt")
+            shutil.move(p, corrupt)
+        except Exception:
+            pass
+        return None
+

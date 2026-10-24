@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import __version__
-from .paths import DATA_DIR
+from .paths import DATA_DIR, atomic_write_json, safe_read_json
 
 SETUP_STATE_FILE = DATA_DIR / "setup_state.json"
 
@@ -229,13 +229,10 @@ def check_all() -> dict:
 
 
 def is_setup_completed() -> bool:
-    if not SETUP_STATE_FILE.exists():
-        return False
-    try:
-        data = json.loads(SETUP_STATE_FILE.read_text(encoding="utf-8"))
+    data = safe_read_json(SETUP_STATE_FILE)
+    if isinstance(data, dict):
         return bool(data.get("completed", False))
-    except Exception:
-        return False
+    return False
 
 
 def mark_setup_completed() -> None:
@@ -244,7 +241,7 @@ def mark_setup_completed() -> None:
         "version": __version__,
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
-    SETUP_STATE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    atomic_write_json(SETUP_STATE_FILE, data)
 
 
 def fix_requirement(action_id: str) -> dict:

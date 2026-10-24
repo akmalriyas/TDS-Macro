@@ -684,31 +684,35 @@ function updateBpBadge(enabled) {
 }
 
 async function loadSettings() {
-  const s = await api.get_settings();
-  if ($("#set-play-again")) $("#set-play-again").checked = Boolean(s.use_play_again);
-  if ($("#set-verify")) $("#set-verify").checked = Boolean(s.verify_scout_once);
-  const bpEnabled = Boolean(s.battlepass_farm);
-  if ($("#set-battlepass-farm")) $("#set-battlepass-farm").checked = bpEnabled;
-  updateBpBadge(bpEnabled);
-  if ($("#set-show-hud")) $("#set-show-hud").checked = Boolean(s.show_hud);
-  if ($("#set-modifiers-enabled")) $("#set-modifiers-enabled").checked = Boolean(s.enable_modifiers !== false);
-  if (Array.isArray(s.modifiers)) {
-    selectedModifiers = s.modifiers;
+  try {
+    const s = (await api.get_settings()) || {};
+    if ($("#set-play-again")) $("#set-play-again").checked = Boolean(s.use_play_again);
+    if ($("#set-verify")) $("#set-verify").checked = Boolean(s.verify_scout_once);
+    const bpEnabled = Boolean(s.battlepass_farm);
+    if ($("#set-battlepass-farm")) $("#set-battlepass-farm").checked = bpEnabled;
+    updateBpBadge(bpEnabled);
+    if ($("#set-show-hud")) $("#set-show-hud").checked = Boolean(s.show_hud);
+    if ($("#set-modifiers-enabled")) $("#set-modifiers-enabled").checked = Boolean(s.enable_modifiers !== false);
+    if (Array.isArray(s.modifiers)) {
+      selectedModifiers = s.modifiers;
+    }
+    renderModifiersRow($("#set-modifiers-enabled") ? $("#set-modifiers-enabled").checked : true);
+
+    if ($("#set-url")) $("#set-url").value = s.webhook_url || "";
+    if ($("#set-on-win")) $("#set-on-win").checked = Boolean(s.webhook_on_triumph);
+    if ($("#set-on-loss")) $("#set-on-loss").checked = Boolean(s.webhook_on_defeat);
+    if ($("#set-on-error")) $("#set-on-error").checked = Boolean(s.webhook_on_error);
+    if ($("#set-on-hourly")) $("#set-on-hourly").checked = Boolean(s.webhook_hourly);
+
+    // Set hotkeys
+    currentHotkeys.start = s.hotkey_start || "F1";
+    currentHotkeys.pause = s.hotkey_pause || "F2";
+    currentHotkeys.stop = s.hotkey_stop || "F3";
+    currentHotkeys.overlay = s.hotkey_overlay || "F7";
+    renderKeycaps();
+  } catch (err) {
+    console.error("Failed to load settings:", err);
   }
-  renderModifiersRow($("#set-modifiers-enabled") ? $("#set-modifiers-enabled").checked : true);
-
-  if ($("#set-url")) $("#set-url").value = s.webhook_url || "";
-  if ($("#set-on-win")) $("#set-on-win").checked = Boolean(s.webhook_on_triumph);
-  if ($("#set-on-loss")) $("#set-on-loss").checked = Boolean(s.webhook_on_defeat);
-  if ($("#set-on-error")) $("#set-on-error").checked = Boolean(s.webhook_on_error);
-  if ($("#set-on-hourly")) $("#set-on-hourly").checked = Boolean(s.webhook_hourly);
-
-  // Set hotkeys
-  currentHotkeys.start = s.hotkey_start || "F1";
-  currentHotkeys.pause = s.hotkey_pause || "F2";
-  currentHotkeys.stop = s.hotkey_stop || "F3";
-  currentHotkeys.overlay = s.hotkey_overlay || "F7";
-  renderKeycaps();
 }
 
 const collect = () => ({
@@ -873,13 +877,19 @@ async function tick() {
   setTimeout(tick, 700);
 }
 window.addEventListener("pywebviewready", async () => {
-  api = window.pywebview.api;
-  presets = await api.presets();
-  await loadSettings();
-  await refresh();
-  switchView("queue");
-  tick();
+  try {
+    api = window.pywebview.api;
+    try { presets = (await api.presets()) || {}; } catch (e) { presets = {}; }
+    try { await loadSettings(); } catch (e) { console.error(e); }
+    try { await refresh(); } catch (e) { console.error(e); }
+    switchView("queue");
+    tick();
 
-  // Background check for GitHub updates
-  setTimeout(checkForUpdates, 3000);
+    // Background check for GitHub updates
+    setTimeout(checkForUpdates, 3000);
+  } catch (crit) {
+    console.error("Critical pywebviewready error:", crit);
+    switchView("queue");
+    tick();
+  }
 });

@@ -13,7 +13,7 @@ from ..config import LOGS, RunSettings
 from ..core import Macro
 from ..flows import runloop
 from ..queue import PRESETS, QueueTask, TaskQueue
-from ..paths import SETTINGS_FILE
+from ..paths import SETTINGS_FILE, atomic_write_json, safe_read_json
 from ..runlog import RunLog
 from ..watchdog import HotkeyWatchdog, release_all_game_keys
 from ..webhook import send_discord_webhook
@@ -58,9 +58,8 @@ class Core:
 
     # ------------------------------------------------------------ persistence
     def _load_settings(self) -> None:
-        try:
-            data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-        except Exception:
+        data = safe_read_json(SETTINGS_FILE)
+        if not isinstance(data, dict):
             return
         for key in PERSISTED:
             if key in data:
@@ -104,7 +103,7 @@ class Core:
                 if isinstance(v, tuple):
                     v = list(v)
                 payload[k] = v
-            SETTINGS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            atomic_write_json(SETTINGS_FILE, payload)
         except Exception:
             pass
         return self.get_settings()
@@ -153,9 +152,22 @@ class Core:
                 pass
 
     def get_settings(self) -> dict:
-        d = {k: getattr(self.settings, k) for k in PERSISTED}
-        d["modifiers"] = list(self.settings.modifiers)
-        return d
+        try:
+            d = {}
+            for k in PERSISTED:
+                d[k] = getattr(self.settings, k, None)
+            raw_mods = getattr(self.settings, "modifiers", ("Glass", "Exploding Enemies"))
+            d["modifiers"] = list(raw_mods) if isinstance(raw_mods, (list, tuple)) else ["Glass", "Exploding Enemies"]
+            return d
+        except Exception:
+            return {
+                "webhook_url": "", "webhook_on_triumph": True, "webhook_on_defeat": True,
+                "webhook_on_error": True, "webhook_hourly": True, "use_play_again": True,
+                "verify_scout_once": True, "battlepass_farm": False, "enable_modifiers": True,
+                "modifiers": ["Glass", "Exploding Enemies"], "minimize_on_start": True,
+                "show_hud": False, "hotkey_start": "F1", "hotkey_pause": "F2",
+                "hotkey_stop": "F3", "hotkey_overlay": "F7"
+            }
 
     # ---------------------------------------------------------------- control
     def alive(self) -> bool:
