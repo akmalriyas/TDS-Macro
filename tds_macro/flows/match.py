@@ -16,7 +16,7 @@ from ..runlog import RunRecord
 from ..state import State
 
 # Top-center region where "Ready? -> Yes" and "Skip Wave? -> Yes" prompts appear (2560x1440)
-TOP_PROMPT_REGION = (800, 50, 960, 360)
+TOP_PROMPT_REGION = (500, 30, 1560, 480)
 
 # 20 Golden Scout placement coordinates along the road on Dead Ahead (2560x1440 overhead).
 # Left shoulder coordinates (x=1045, 945) and right median/shoulder coordinates (x=1390, 1490).
@@ -54,7 +54,7 @@ def get_top_prompt_region(frame: np.ndarray) -> tuple[int, int, int, int]:
     if w == 2560 and h == 1440:
         return TOP_PROMPT_REGION
     sx, sy = w / 2560.0, h / 1440.0
-    return (int(round(800 * sx)), int(round(50 * sy)), int(round(960 * sx)), int(round(360 * sy)))
+    return (int(round(500 * sx)), int(round(30 * sy)), int(round(1560 * sx)), int(round(480 * sy)))
 
 
 def get_scout_slots(frame: np.ndarray) -> list[tuple[int, int]]:
@@ -116,13 +116,13 @@ def click_top_yes(m: Macro) -> bool:
     frame = m.grab()
     region = get_top_prompt_region(frame)
 
-    # 1. Primary check: Green button on banner with horizontal aspect ratio (w/h >= 1.4, w >= 70)
-    boxes = vision.find_green_buttons(frame, region, min_area=300, max_boxes=6)
+    # 1. Primary check: Green button on banner with horizontal aspect ratio (w/h >= 1.2, w >= 50, h >= 20)
+    boxes = vision.find_green_buttons(frame, region, min_area=180, max_boxes=8)
     for box in boxes:
         aspect = box.w / max(1, box.h)
-        if box.w >= 70 and 22 <= box.h <= 100 and aspect >= 1.4:
+        if box.w >= 50 and 20 <= box.h <= 120 and 1.2 <= aspect <= 6.0:
             m.log(f"clicking top banner green button at {box.center} (ratio={aspect:.2f}, {box.w}x{box.h})", "cyan")
-            inp.click_box(box.tuple, hold=0.06)
+            inp.click_box(box.tuple, hold=0.08)
             m.touch()
             time.sleep(0.10)
             return True
@@ -133,9 +133,9 @@ def click_top_yes(m: Macro) -> bool:
         if "?" in line.text or "required" in line.norm:
             continue
         norm = line.norm
-        if norm in ("ready", "yes", "skip", "vote") or norm.startswith("ready") or norm.startswith("skip"):
+        if norm in ("ready", "yes", "skip", "vote") or "ready" in norm or norm.startswith("skip") or norm.startswith("vote"):
             m.log(f"found top banner button '{line.text}' at {line.box.center}; clicking", "cyan")
-            inp.click(line.box.center[0], line.box.center[1], hold=0.06)
+            inp.click(line.box.center[0], line.box.center[1], hold=0.08)
             m.touch()
             time.sleep(0.10)
             return True
@@ -463,33 +463,65 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
     m.scouts_placed = 1
     m.notify_status()
 
-    # Click Ready? -> Yes to start Wave 1 with verification loop
+    # Click Ready? -> Yes to start Wave 1 with robust multi-tier fallback
     m.log("clicking Ready at top of screen to start Wave 1", "bold")
-    for attempt in range(6):
+    m.focus()
+    m.press("q")
+    time.sleep(0.15)
+
+    for attempt in range(10):
         m.check_interrupts()
-        # Check if already readied or match starting
+        m.focus()
+
+        # Step 1: Check if Wave 1 has already started on server
         frame = m.grab()
-        reg = get_top_prompt_region(frame)
-        lines = m.ocr.recognize(frame, reg)
-        text = " ".join(l.norm for l in lines)
-        if "1/1" in text or "unready" in text or "starting" in text or not any("ready" in l.norm for l in lines):
-            m.log("Wave 1 Ready confirmed (ready active or match starting)!", "bold green")
+        curr_wave = m.read_wave(frame)
+        if curr_wave is not None and curr_wave >= 1:
+            m.current_wave = curr_wave
+            m.log(f"Wave 1 started successfully! (Wave {curr_wave})", "bold green")
             break
 
-        # Click ready button once
-        if click_top_yes(m):
-            m.log(f"Clicked Ready banner (attempt {attempt + 1})", "cyan")
-            time.sleep(0.50)
-            # Re-check frame without blindly clicking again
-            frame_after = m.grab()
-            lines_after = m.ocr.recognize(frame_after, reg)
-            text_after = " ".join(l.norm for l in lines_after)
-            if "1/1" in text_after or "unready" in text_after or "starting" in text_after or not any("ready" in l.norm for l in lines_after):
-                m.log("Wave 1 Ready confirmed!", "bold green")
-                break
-        else:
-            m.click_text("yes", region=reg, timeout=1.0)
-        time.sleep(0.40)
+        # Step 2: Try computer vision green button detection
+        clicked = click_top_yes(m)
+
+        # Step 3: If vision didn't click, try OCR search for "ready"
+        if not clicked:
+            reg = get_top_prompt_region(frame)
+            lines = m.ocr.recognize(frame, reg)
+            for l in lines:
+                norm = l.norm
+                if "ready" in norm and "?" not in l.text and "required" not in norm:
+                    m.log(f"clicking OCR Ready button at {l.box.center}", "cyan")
+                    inp.click(l.box.center[0], l.box.center[1], hold=0.08)
+                    clicked = True
+                    break
+
+        # Step 4: If still not clicked, use calibrated coordinates
+        if not clicked:
+            m.log(f"clicking calibrated Ready position (1380, 240) [Attempt {attempt + 1}]", "cyan")
+            inp.click(1380, 240, hold=0.08)
+            time.sleep(0.10)
+            inp.click(1340, 240, hold=0.08)
+            clicked = True
+
+        time.sleep(0.60)
+
+        # Step 5: Verification check
+        frame_after = m.grab()
+        curr_wave = m.read_wave(frame_after)
+        if curr_wave is not None and curr_wave >= 1:
+            m.current_wave = curr_wave
+            m.log(f"Wave 1 started successfully! (Wave {curr_wave})", "bold green")
+            break
+
+        reg = get_top_prompt_region(frame_after)
+        lines_after = m.ocr.recognize(frame_after, reg)
+        text_after = " ".join(l.norm for l in lines_after)
+        if "1/1" in text_after or "unready" in text_after or "starting" in text_after:
+            m.log("Wave 1 Ready confirmed (ready 1/1 active)!", "bold green")
+            break
+
+        time.sleep(0.30)
 
     # Wait for $250 to upgrade Scout 1 to Level 2
     m.log("waiting for $250 to upgrade Scout #1 to Level 2", "cyan")
