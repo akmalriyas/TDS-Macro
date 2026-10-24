@@ -14,25 +14,28 @@ from . import lobby, match
 
 
 def _print_hourly_table(m: Macro, log: RunLog) -> None:
-    s = log.summary()
-    t = Table(title="TDS Macro — Session & Hourly Summary", show_header=True, header_style="bold cyan")
-    t.add_column("Runs", justify="right")
-    t.add_column("W / L", justify="right")
-    t.add_column("Coins Earned", justify="right", style="yellow")
-    t.add_column("Coins / hr", justify="right", style="bold yellow")
-    t.add_column("Gems Earned", justify="right", style="magenta")
-    t.add_column("Gems / hr", justify="right", style="bold magenta")
-    t.add_column("XP / hr", justify="right", style="green")
-    t.add_row(
-        str(int(s["runs"])),
-        f"{int(s['wins'])} / {int(s['losses'])}",
-        f"{int(s['coins_total']):,}",
-        f"{s['coins_per_hour']:,.0f}/hr",
-        f"{int(s['gems_total']):,}",
-        f"{s['gems_per_hour']:,.0f}/hr",
-        f"{s['xp_per_hour']:,.0f}/hr",
-    )
-    m.console.print(t)
+    try:
+        s = log.summary()
+        t = Table(title="TDS Macro — Session & Hourly Summary", show_header=True, header_style="bold cyan")
+        t.add_column("Runs", justify="right")
+        t.add_column("W / L", justify="right")
+        t.add_column("Coins Earned", justify="right", style="yellow")
+        t.add_column("Coins / hr", justify="right", style="bold yellow")
+        t.add_column("Gems Earned", justify="right", style="magenta")
+        t.add_column("Gems / hr", justify="right", style="bold magenta")
+        t.add_column("XP / hr", justify="right", style="green")
+        t.add_row(
+            str(int(s["runs"])),
+            f"{int(s['wins'])} / {int(s['losses'])}",
+            f"{int(s['coins_total']):,}",
+            f"{s['coins_per_hour']:,.0f}/hr",
+            f"{int(s['gems_total']):,}",
+            f"{s['gems_per_hour']:,.0f}/hr",
+            f"{s['xp_per_hour']:,.0f}/hr",
+        )
+        m.console.print(t)
+    except Exception:
+        pass
 
 
 def run_forever(m: Macro, log: RunLog, settings: Optional[RunSettings] = None) -> None:
