@@ -339,75 +339,125 @@ class Macro:
 
         if crop.size > 0:
             import cv2
-            crop_2x = cv2.resize(crop, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-            lines = self.ocr.recognize(crop_2x)
-
-            # 1. Tower count parser (e.g. '0/41', '1/41', '6/41', '18/41', 'o ; 41', '0/4z')
-            for line in lines:
-                clean = re.sub(r"[oO]", "0", line.text)
-                m = re.search(r"(\d{1,2})\s*[/@|;:!1zZ\s]\s*(4[01zZ])", clean)
-                if m:
-                    towers = (int(m.group(1)), 41)
-                    self.scouts_placed = max(self.scouts_placed, towers[0])
+            # 1. Tower count parser (multi-scale check)
+            for scale in [1.0, 2.0, 2.5]:
+                img = crop if scale == 1.0 else cv2.resize(crop, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+                lines = self.ocr.recognize(img)
+                for line in lines:
+                    clean = re.sub(r"[oO]", "0", line.text)
+                    m = re.search(r"(\d{1,2})\s*[/@|;:!1zZ\[\]\\(\)\s]\s*(4[01zZ])", clean)
+                    if m:
+                        towers = (int(m.group(1)), 41)
+                        self.scouts_placed = max(self.scouts_placed, towers[0])
+                        break
+                if towers[0] is not None:
                     break
 
-            # 2. Cash parser: prioritize explicit '$' prefix first, then fallback to digit string
-            for line in lines:
-                text = line.text.strip()
-                if towers[0] is not None and str(towers[1]) in text:
-                    continue
-                clean = re.sub(r"^[sS+¢&]+\s*", "$", text).replace(",", "")
-                m_dollar = re.search(r"\$\s*(\d+)", clean)
-                if m_dollar:
-                    v = int(m_dollar.group(1))
-                    if v not in (40, 41) and 0 <= v <= 999999:
+            # 2. Cash parser (multi-scale check)
+            for scale in [1.0, 2.0, 2.5]:
+                img = crop if scale == 1.0 else cv2.resize(crop, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+                lines = self.ocr.recognize(img)
+                for line in lines:
+                    text_str = line.text.strip()
+                    if towers[0] is not None and str(towers[1]) in text_str:
+                        continue
+                    v = self._parse_cash_token(text_str)
+                    if v is not None:
                         cash = v
                         self.current_cash = v
                         break
-
-            if cash is None:
-                for line in lines:
-                    text = line.text.strip()
-                    if towers[0] is not None and str(towers[1]) in text:
-                        continue
-                    clean = re.sub(r"^[sS+¢&]+\s*", "$", text).replace(",", "")
-                    m_gen = re.search(r"(?:\$|s|\+)?\s*(\d+)", clean)
-                    if m_gen:
-                        v = int(m_gen.group(1))
-                        if v not in (40, 41) and 0 <= v <= 999999:
-                            cash = v
-                            self.current_cash = v
-                            break
+                if cash is not None:
+                    break
 
         if cash is not None or towers[0] is not None:
             self.notify_status()
 
         return cash, towers
 
+    def _parse_cash_token(self, text: str) -> Optional[int]:
+        """Parse integer cash value from OCR string, handling currency symbols, K notation, and character noise."""
+        text = text.strip()
+        if not text:
+            return None
+        # 'K' or 'k' notation (e.g. $47.39K -> 47390, 19.74k -> 19740)
+        m_k = re.search(r"[$sScC]?\s*(\d+(?:\.\d+)?)\s*[kK]", text)
+        if m_k:
+            try:
+                return int(float(m_k.group(1)) * 1000)
+            except Exception:
+                pass
+        # Normalize currency prefixes
+        clean = re.sub(r"^[$sScC¢&+\-\s]+", "$", text).strip()
+        has_dollar = clean.startswith("$")
+        num_part = clean[1:].strip().replace(",", "") if has_dollar else clean.replace(",", "")
+        # Normalize digit substitutions
+        trans = str.maketrans({
+            'o': '0', 'O': '0', 'D': '0',
+            'l': '1', 'I': '1', '|': '1', 'i': '1', '!': '1',
+            'z': '2', 'Z': '2',
+        })
+        num_part = num_part.translate(trans)
+        m_num = re.search(r"(\d+)", num_part)
+        if m_num:
+            try:
+                val = int(m_num.group(1))
+                # Must have explicit dollar prefix OR be at least 25 (minimum bounty/cost in TDS)
+                # and strictly exclude tower count cap 40 or 41
+                if (has_dollar or val >= 25) and 0 <= val <= 9999999 and val not in (40, 41):
+                    return val
+            except Exception:
+                pass
+        return None
+
     def read_cash(self, frame: Optional[np.ndarray] = None) -> Optional[int]:
-        """Read current cash from HUD. Checks bottom hotbar first, then top-right leaderboard."""
+        """Read current cash from HUD with multi-tier, multi-scale detection across resolutions.
+        Checks top-right match leaderboard first, then bottom hotbar, then fallbacks."""
         frame = self.grab() if frame is None else frame
+        import cv2
+
+        # 1. Primary Check: Top-right match leaderboard cash column ($Cash for player Flare)
+        # Bounded in normalized frame at x: 2450..2555, y: 95..160
+        h, w = frame.shape[:2]
+        y1, y2 = max(0, 95), min(h, 160)
+        x1, x2 = max(0, 2450), min(w, 2555)
+        tr_crop = frame[y1:y2, x1:x2]
+        if tr_crop.size > 0:
+            # Pass 1: raw multi-scale
+            for scale in [1.0, 2.5, 3.0]:
+                tr_img = tr_crop if scale == 1.0 else cv2.resize(tr_crop, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+                for l in self.ocr.recognize(tr_img):
+                    v = self._parse_cash_token(l.text)
+                    if v is not None:
+                        self.current_cash = v
+                        self.notify_status()
+                        return v
+
+            # Pass 2: high-contrast threshold for lower resolutions (900p / 720p)
+            gray = cv2.cvtColor(tr_crop, cv2.COLOR_BGR2GRAY)
+            for th in [170, 180]:
+                _, b = cv2.threshold(gray, th, 255, cv2.THRESH_BINARY)
+                b3 = cv2.resize(b, (0, 0), fx=3.0, fy=3.0, interpolation=cv2.INTER_NEAREST)
+                pad = cv2.copyMakeBorder(b3, 30, 30, 30, 30, cv2.BORDER_CONSTANT, value=0)
+                for l in self.ocr.recognize(pad):
+                    v = self._parse_cash_token(l.text)
+                    if v is not None:
+                        self.current_cash = v
+                        self.notify_status()
+                        return v
+
+        # 2. Secondary Check: Bottom hotbar cash HUD
         cash, _ = self.read_bottom_hud(frame)
         if cash is not None:
             return cash
 
-        # Top-right player cash display fallback (x=2440..2555, y=90..170)
-        top_right_lines = self.ocr.recognize(frame, (2440, 90, 120, 80))
-        for line in top_right_lines:
-            v = parse_int(line.text)
-            if v is not None and v >= 0:
+        # 3. Tertiary Check: Top-right broader search (x=2400..2555, y=70..220)
+        top_right_broader = self.ocr.recognize(frame, (2400, 70, 160, 200))
+        for line in top_right_broader:
+            v = self._parse_cash_token(line.text)
+            if v is not None:
                 self.current_cash = v
                 self.notify_status()
                 return v
-
-        top_right_broader = self.ocr.recognize(frame, (2400, 70, 160, 200))
-        for line in top_right_broader:
-            if "$" in line.text or "k" in line.text.lower():
-                v = parse_int(line.text)
-                if v is not None and v >= 0:
-                    self.current_cash = v
-                    self.notify_status()
-                    return v
 
         return self.current_cash
 
@@ -422,32 +472,45 @@ class Macro:
             lines = self.ocr.recognize(frame, roi)
             for line in lines:
                 clean = re.sub(r"[oO]", "0", line.text)
-                m = re.search(r"(\d{1,2})\s*[/@|;:!1\s]\s*(4[01])", clean)
+                m = re.search(r"(\d{1,2})\s*[/@|;:!1zZ\[\]\\(\)\s]\s*(4[01zZ])", clean)
                 if m:
-                    placed, cap = int(m.group(1)), int(m.group(2))
+                    placed, cap = int(m.group(1)), 41
                     self.scouts_placed = max(self.scouts_placed, placed)
                     self.notify_status()
                     return placed, cap
         return None, None
 
     def read_wave(self, frame: Optional[np.ndarray] = None) -> Optional[int]:
-        """Read current wave number from top HUD."""
+        """Read current wave number from top HUD with multi-scale recognition."""
         frame = self.grab() if frame is None else frame
-        for roi in ((900, 30, 220, 80), (650, 0, 1260, 180)):
-            lines = self.ocr.recognize(frame, roi)
-            for line in lines:
-                m = re.search(r"wave\s*(\d{1,2})", line.norm)
-                if m:
-                    w = int(m.group(1))
-                    self.current_wave = w
-                    self.notify_status()
-                    return w
-                m_slash = re.search(r"(\d{1,2})\s*/\s*(\d{1,2})", line.text)
-                if m_slash:
-                    w = int(m_slash.group(1))
-                    self.current_wave = w
-                    self.notify_status()
-                    return w
+        import cv2
+        for roi in ((850, 20, 320, 100), (650, 0, 1260, 180)):
+            x, y, w, h = roi
+            crop = frame[y:y+h, x:x+w]
+            if crop.size == 0:
+                continue
+            for sc in [1.0, 2.0]:
+                img = crop if sc == 1.0 else cv2.resize(crop, (0, 0), fx=sc, fy=sc, interpolation=cv2.INTER_LINEAR)
+                lines = self.ocr.recognize(img)
+                for line in lines:
+                    m = re.search(r"wave\s*[:#]?\s*(\d{1,2})", line.norm)
+                    if m:
+                        w_num = int(m.group(1))
+                        self.current_wave = w_num
+                        self.notify_status()
+                        return w_num
+                    m_slash = re.search(r"(\d{1,2})\s*/\s*(?:20|50)", line.text)
+                    if m_slash:
+                        w_num = int(m_slash.group(1))
+                        self.current_wave = w_num
+                        self.notify_status()
+                        return w_num
+                # If during prep, 'Wave:' is visible without number or '0/1 required' is present
+                for line in lines:
+                    if "wave" in line.norm and ("prep" in line.norm or "0/1" in line.text or "required" in line.norm):
+                        self.current_wave = 0
+                        self.notify_status()
+                        return 0
         return self.current_wave
 
     # --------------------------------------------------------------- lifecycle

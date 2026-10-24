@@ -165,7 +165,7 @@ def normalize_frame(frame):
         return frame
     import cv2
 
-    interp = cv2.INTER_AREA if w > REF_W else cv2.INTER_CUBIC
+    interp = cv2.INTER_AREA if w > REF_W else cv2.INTER_LANCZOS4
     return cv2.resize(frame, (REF_W, REF_H), interpolation=interp)
 
 
