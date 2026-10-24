@@ -15,8 +15,9 @@ from ..ocr import find_line, parse_int, text_near
 from ..runlog import RunRecord
 from ..state import State
 
-# Top-center region where "Ready? -> Yes" and "Skip Wave? -> Yes" prompts appear (2560x1440)
-TOP_PROMPT_REGION = (500, 30, 1560, 480)
+# Top-center region where "Ready? -> Yes" and "Skip Wave? -> Yes" prompts appear (2560x1440).
+# Starts at y=140 to completely avoid the top HUD and green Base Health bar (y=30..120).
+TOP_PROMPT_REGION = (500, 140, 1560, 340)
 
 # 20 Golden Scout placement coordinates along the road on Dead Ahead (2560x1440 overhead).
 # Left shoulder coordinates (x=1045, 945) and right median/shoulder coordinates (x=1390, 1490).
@@ -54,7 +55,7 @@ def get_top_prompt_region(frame: np.ndarray) -> tuple[int, int, int, int]:
     if w == 2560 and h == 1440:
         return TOP_PROMPT_REGION
     sx, sy = w / 2560.0, h / 1440.0
-    return (int(round(500 * sx)), int(round(30 * sy)), int(round(1560 * sx)), int(round(480 * sy)))
+    return (int(round(500 * sx)), int(round(140 * sy)), int(round(1560 * sx)), int(round(340 * sy)))
 
 
 def get_scout_slots(frame: np.ndarray) -> list[tuple[int, int]]:
@@ -117,10 +118,11 @@ def click_top_yes(m: Macro) -> bool:
     region = get_top_prompt_region(frame)
 
     # 1. Primary check: Green button on banner with horizontal aspect ratio (w/h >= 1.2, w >= 50, h >= 20)
+    # Strictly enforce box.center[1] >= 140 to guarantee no false clicks on the Base Health bar
     boxes = vision.find_green_buttons(frame, region, min_area=180, max_boxes=8)
     for box in boxes:
         aspect = box.w / max(1, box.h)
-        if box.w >= 50 and 20 <= box.h <= 120 and 1.2 <= aspect <= 6.0:
+        if box.w >= 50 and 20 <= box.h <= 120 and 1.2 <= aspect <= 6.0 and box.center[1] >= 140:
             m.log(f"clicking top banner green button at {box.center} (ratio={aspect:.2f}, {box.w}x{box.h})", "cyan")
             inp.click_box(box.tuple, hold=0.08)
             m.touch()
@@ -246,8 +248,18 @@ def _is_tower_card_open(m: Macro) -> tuple[bool, Optional[int], bool]:
     Returns (is_open, current_level, is_maxed)."""
     frame = m.grab()
 
-    # 1. Comprehensive OCR check over full card region (0, 320, 560, 680)
-    lines = m.ocr.recognize(frame, (0, 320, 560, 680))
+    # 1. Fast visual check (<0.1ms): Sell button ROI [830:920, 70:270] (saturated crimson red)
+    has_sell_btn = False
+    if isinstance(frame, np.ndarray) and frame.ndim == 3:
+        sell_roi = frame[830:920, 70:270]
+        if sell_roi.size:
+            r_chan = sell_roi[:, :, 2].astype(int)
+            g_chan = sell_roi[:, :, 1].astype(int)
+            b_chan = sell_roi[:, :, 0].astype(int)
+            has_sell_btn = int(((r_chan > 120) & (r_chan > g_chan * 1.3) & (r_chan > b_chan * 1.3)).sum()) > 45
+
+    # 2. Comprehensive OCR check over full card region (0, 300, 580, 700)
+    lines = m.ocr.recognize(frame, (0, 300, 580, 700))
     text = " ".join(l.norm for l in lines)
     raw_text = " ".join(l.text for l in lines)
 
@@ -257,28 +269,18 @@ def _is_tower_card_open(m: Macro) -> tuple[bool, Optional[int], bool]:
         "firerate", "last", "weakest", "random", "lead", "flying"
     ))
 
-    # 2. Visual check: Sell button ROI [840:910, 80:260] (distinct saturated crimson red)
-    sell_roi = frame[840:910, 80:260]
-    has_sell_btn = False
-    if sell_roi.size:
-        r_chan = sell_roi[:, :, 2].astype(int)
-        g_chan = sell_roi[:, :, 1].astype(int)
-        b_chan = sell_roi[:, :, 0].astype(int)
-        has_sell_btn = int(((r_chan > 120) & (r_chan > g_chan * 1.3) & (r_chan > b_chan * 1.3)).sum()) > 60
-
     is_open = ocr_open or has_sell_btn
     if not is_open:
         return False, None, False
 
-    is_maxed = ("max level" in text or "maxed" in text or "max" in text)
+    # 3. Determine level & max status
+    is_maxed = any(k in text for k in ("max level", "maxed", "max upgrade")) or ("max" in text and "cost" not in text)
     current_level = None
     if is_maxed:
         current_level = 4
     else:
-        m_lvl = re.search(r"(?:level|lvl|lv)\s*[:#]?\s*([0-4])", text)
-        if m_lvl:
-            current_level = int(m_lvl.group(1))
-        elif "2550" in text or "2,550" in raw_text:
+        # Check next upgrade price tag (highest reliability in TDS)
+        if "2550" in text or "2,550" in raw_text:
             current_level = 3
         elif "950" in text:
             current_level = 2
@@ -286,6 +288,11 @@ def _is_tower_card_open(m: Macro) -> tuple[bool, Optional[int], bool]:
             current_level = 1
         elif "100" in text:
             current_level = 0
+        else:
+            # Fallback to level regex
+            m_lvl = re.search(r"(?:level|lvl|lv)\s*[:#]?\s*([0-4])", text)
+            if m_lvl:
+                current_level = int(m_lvl.group(1))
 
     return True, current_level, is_maxed
 
@@ -295,38 +302,155 @@ def deselect_tower(m: Macro) -> None:
     Clicks neutral empty space at (320, 160) and presses 'Q'."""
     inp.click(320, 160, hold=0.03, settle=0.04)
     m.press("q")
+    m.selected_scout_coord = None
     time.sleep(0.06)
 
 
-def _upgrade_scout_at(m: Macro, scout: dict, presses: int = 1) -> bool:
+def _open_scout_card(m: Macro, coord: tuple[int, int]) -> tuple[bool, Optional[int], bool]:
+    """Select the scout at coord, polling for the card to open with zero toggle risk.
+    Returns (is_open, current_level, is_maxed)."""
+    # 1. If this exact scout is already open, use it immediately
+    if getattr(m, "selected_scout_coord", None) == coord:
+        is_open, lvl, is_max = _is_tower_card_open(m)
+        if is_open:
+            return is_open, lvl, is_max
+
+    # 2. If a card was open for another tower, deselect first to prevent state leakage
+    if getattr(m, "selected_scout_coord", None) is not None or _is_tower_card_open(m)[0]:
+        deselect_tower(m)
+
+    # 3. Primary click on tower torso (-22)
+    inp.click_3d(coord[0], coord[1] - 22, hold=0.04, settle=0.06)
+    deadline = time.time() + 0.45
+    while time.time() < deadline:
+        time.sleep(0.06)
+        is_open, lvl, is_max = _is_tower_card_open(m)
+        if is_open:
+            m.selected_scout_coord = coord
+            return True, lvl, is_max
+
+    # 4. Fallback click on head (-35)
+    inp.click_3d(coord[0], coord[1] - 35, hold=0.04, settle=0.06)
+    deadline = time.time() + 0.45
+    while time.time() < deadline:
+        time.sleep(0.06)
+        is_open, lvl, is_max = _is_tower_card_open(m)
+        if is_open:
+            m.selected_scout_coord = coord
+            return True, lvl, is_max
+
+    # 5. Last resort: ground base / pedestal (0, 0)
+    inp.click_3d(coord[0], coord[1], hold=0.04, settle=0.06)
+    deadline = time.time() + 0.40
+    while time.time() < deadline:
+        time.sleep(0.06)
+        is_open, lvl, is_max = _is_tower_card_open(m)
+        if is_open:
+            m.selected_scout_coord = coord
+            return True, lvl, is_max
+
+    deselect_tower(m)
+    return False, None, False
+
+
+def _upgrade_scout_at(m: Macro, scout: dict | tuple[int, int], presses: int = 1) -> bool:
     """Click a placed Scout to select it and trigger upgrade.
-    Validates whether cash was consumed by the server before confirming success.
-    Tracks actual confirmed level and marks maxed ONLY when Level 4 ($2,550) is reached."""
-    if scout.get("maxed", False):
+    Strictly verifies upgrade success via card state or cash consumption before confirming.
+    Never assumes phantom level progression."""
+    if isinstance(scout, tuple):
+        scout_dict = {"coord": scout, "level": 0, "maxed": False}
+        coord = scout
+    else:
+        scout_dict = scout
+        coord = scout_dict["coord"]
+
+    if scout_dict.get("maxed", False):
         return True
 
-    coord = scout["coord"]
     m.touch()
 
-    # Step 1: Check if the card is already open
-    card_opened, card_level, is_max = _is_tower_card_open(m)
-
+    # Step 1: Open the tower card cleanly with zero toggle risk
+    card_opened, card_level, is_max = _open_scout_card(m, coord)
     if not card_opened:
-        # Click 3D tower mesh: prioritize torso (-25), head (-38), waist (-12), and shoulders (-14, -25), (14, -25)
-        offsets = [(0, -25), (0, -38), (0, -12), (-14, -25), (14, -25)]
-        for dx, dy in offsets:
-            inp.click_3d(coord[0] + dx, coord[1] + dy, hold=0.04, settle=0.06)
-            time.sleep(0.28)  # Allow UI slide-in tween to complete
-            card_opened, card_level, is_max = _is_tower_card_open(m)
-            if card_opened:
-                break
+        scout_dict["failed_upgrades"] = scout_dict.get("failed_upgrades", 0) + 1
+        scout_dict["last_failed_time"] = time.time()
+        return False
 
-    # If the card did not open after all offsets:
-    if not card_opened:
-        scout["failed_upgrades"] = scout.get("failed_upgrades", 0) + 1
-        scout["last_failed_time"] = time.time()
+    scout_dict["failed_upgrades"] = 0
+
+    # If already Level 4 MAX:
+    if is_max or (card_level is not None and card_level >= 4) or scout_dict.get("level", 0) >= 4:
+        scout_dict["level"] = 4
+        scout_dict["maxed"] = True
+        deselect_tower(m)
+        m.log(f"Scout at {coord} is ALREADY MAX LEVEL!", "bold green")
+        return True
+
+    # Calibrate scout level from card if higher
+    if card_level is not None:
+        scout_dict["level"] = max(scout_dict.get("level", 0), card_level)
+
+    curr_lvl = scout_dict.get("level", 0)
+    level_costs = {0: 100, 1: 250, 2: 950, 3: 2550}
+    needed_cash = level_costs.get(curr_lvl, 250)
+
+    # Check cash before attempting: if cash is known and insufficient, abort cleanly
+    cash_before = m.read_cash()
+    if cash_before is not None and cash_before < needed_cash:
+        m.log(f"Scout at {coord} needs ${needed_cash} (currently L{curr_lvl}), but have ${cash_before}; waiting", "dim")
         deselect_tower(m)
         return False
+
+    # Step 2: Trigger upgrade via screen button (196, 780) and keybind ('e')
+    for _ in range(presses):
+        inp.click(196, 780, hold=0.04, settle=0.05)
+        m.press("e")
+        time.sleep(0.10)
+
+    # Step 3: Strictly verify upgrade success by polling card & cash for up to 0.85s
+    upgraded = False
+    confirmed_lvl = curr_lvl
+    confirmed_max = False
+
+    deadline = time.time() + 0.85
+    while time.time() < deadline:
+        time.sleep(0.08)
+        _, new_lvl, new_max = _is_tower_card_open(m)
+        if new_max:
+            upgraded = True
+            confirmed_lvl = 4
+            confirmed_max = True
+            break
+        if new_lvl is not None and new_lvl > curr_lvl:
+            upgraded = True
+            confirmed_lvl = new_lvl
+            if confirmed_lvl >= 4:
+                confirmed_max = True
+            break
+        cash_after = m.read_cash()
+        if cash_before is not None and cash_after is not None and cash_after <= cash_before - int(needed_cash * 0.75):
+            upgraded = True
+            confirmed_lvl = curr_lvl + presses
+            if confirmed_lvl >= 4 or (cash_before - cash_after >= 1800):
+                confirmed_lvl = 4
+                confirmed_max = True
+            break
+
+    # Cleanly deselect after upgrade attempt
+    deselect_tower(m)
+
+    if upgraded:
+        scout_dict["level"] = confirmed_lvl
+        if confirmed_max or scout_dict["level"] >= 4:
+            scout_dict["level"] = 4
+            scout_dict["maxed"] = True
+            m.log(f"VERIFIED: Scout at {coord} REACHED LEVEL 4 MAX!", "bold green")
+        else:
+            m.log(f"VERIFIED: Scout at {coord} upgraded to Level {scout_dict['level']}!", "green")
+        return True
+
+    m.log(f"Upgrade attempt at {coord} unconfirmed (remains L{scout_dict['level']}); will retry", "dim")
+    return False
 
     # Reset failure counter on successful card opening
     scout["failed_upgrades"] = 0
@@ -408,8 +532,8 @@ def collect_battlepass_drops(m: Macro) -> None:
     m._custom_status = "Battlepass Farm"
     m.notify_status()
     try:
-        SWEEP_TIME = 0.95
-        LATERAL_TIME = 0.25
+        SWEEP_TIME = 0.55
+        LATERAL_TIME = 0.20
 
         # 1. Walk FORWARD (W) up the road median toward the portal where tokens drop
         m.hold(["w"], SWEEP_TIME)
@@ -536,7 +660,8 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
     m.press("q")
     time.sleep(0.15)
 
-    for attempt in range(10):
+    wave_1_started = False
+    for attempt in range(16):
         m.check_interrupts()
         m.focus()
 
@@ -546,6 +671,7 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
         if curr_wave is not None and curr_wave >= 1:
             m.current_wave = curr_wave
             m.log(f"Wave 1 started successfully! (Wave {curr_wave})", "bold green")
+            wave_1_started = True
             break
 
         # Step 2: Try computer vision green button detection
@@ -563,15 +689,15 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                     clicked = True
                     break
 
-        # Step 4: If still not clicked, use calibrated coordinates
+        # Step 4: If still not clicked, use calibrated coordinates (dead center on Ready button y=255)
         if not clicked:
-            m.log(f"clicking calibrated Ready position (1380, 240) [Attempt {attempt + 1}]", "cyan")
-            inp.click(1380, 240, hold=0.08)
+            m.log(f"clicking calibrated Ready position (1380, 255) [Attempt {attempt + 1}]", "cyan")
+            inp.click(1380, 255, hold=0.08)
             time.sleep(0.10)
-            inp.click(1340, 240, hold=0.08)
+            inp.click(1340, 255, hold=0.08)
             clicked = True
 
-        time.sleep(0.60)
+        time.sleep(0.50)
 
         # Step 5: Verification check
         frame_after = m.grab()
@@ -579,6 +705,7 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
         if curr_wave is not None and curr_wave >= 1:
             m.current_wave = curr_wave
             m.log(f"Wave 1 started successfully! (Wave {curr_wave})", "bold green")
+            wave_1_started = True
             break
 
         reg = get_top_prompt_region(frame_after)
@@ -586,9 +713,26 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
         text_after = " ".join(l.norm for l in lines_after)
         if "1/1" in text_after or "unready" in text_after or "starting" in text_after:
             m.log("Wave 1 Ready confirmed (ready 1/1 active)!", "bold green")
+            wave_1_started = True
             break
 
-        time.sleep(0.30)
+        time.sleep(0.20)
+
+    # Safety catch: if Wave 1 failed to start after 16 attempts, abort match to prevent 22-min timeout
+    if not wave_1_started:
+        frame_final = m.grab()
+        final_wave = m.read_wave(frame_final)
+        if final_wave is None or final_wave < 1:
+            m.log("Wave 1 failed to start after 16 attempts; aborting match to prevent stall", "bold red")
+            inp.press("escape")
+            time.sleep(0.4)
+            inp.press("l")
+            time.sleep(0.4)
+            inp.press("enter")
+            time.sleep(4.0)
+            if record is not None:
+                record.result = "aborted_wave1_stall"
+            return State.LOBBY
 
     # Wait for $250 to upgrade Scout 1 to Level 2
     m.log("waiting for $250 to upgrade Scout #1 to Level 2", "cyan")
@@ -681,9 +825,8 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
         def can_upgrade(s: dict) -> bool:
             if s.get("maxed", False):
                 return False
-            # If it failed 2 or more times recently, give it a 10s cooldown
-            # so the macro continues upgrading other scouts / placing towers
-            if s.get("failed_upgrades", 0) >= 2 and (time.time() - s.get("last_failed_time", 0.0) < 10.0):
+            # Fast 5s cooldown if multiple card opening attempts failed
+            if s.get("failed_upgrades", 0) >= 2 and (time.time() - s.get("last_failed_time", 0.0) < 5.0):
                 return False
             return True
 
@@ -697,19 +840,19 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 2: Early Core Placement (Place up to 6 scouts early for wide line coverage)
-        # Having 6 Level-2 scouts by Wave 5 guarantees 48 DPS and shreds early mobs/swarms
-        if len(scouts) < min(6, target_scouts) and len(scouts) < len(slots):
+        # PRIORITY 2: Early Core Placement (Place up to 5 scouts early for wide 40 DPS coverage)
+        # Having 5 Level-2 scouts by Wave 4-5 guarantees early swarm shredding
+        if len(scouts) < min(5, target_scouts) and len(scouts) < len(slots):
             if cash is None or cash >= 250:
                 coord = _place_next_scout(m, slots, scouts, failed_slots)
                 if coord is not None:
                     scouts.append({"coord": coord, "level": 0, "maxed": False})
                     m.scouts_placed = len(scouts)
-                    m.log(f"placed early Scout #{len(scouts)}/6 at {coord}", "green")
+                    m.log(f"placed early Scout #{len(scouts)}/5 at {coord}", "green")
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 3: Rush Scout #1 to Level 3 ($950) -> Lead Detection before Wave 7!
+        # PRIORITY 3: Rush Scout #1 to Level 3 ($950) -> Lead Detection active before Wave 7!
         if len(scouts) >= 1 and can_upgrade(scouts[0]) and scouts[0].get("level", 0) == 2:
             if cash is None or cash >= 950:
                 if _upgrade_scout_at(m, scouts[0]):
@@ -723,43 +866,44 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 5: Mid-Game Expansion (Place up to 10 scouts before rushing next MAX)
-        if len(scouts) < min(10, target_scouts) and len(scouts) < len(slots):
-            if cash is None or cash >= 250:
-                coord = _place_next_scout(m, slots, scouts, failed_slots)
-                if coord is not None:
-                    scouts.append({"coord": coord, "level": 0, "maxed": False})
-                    m.scouts_placed = len(scouts)
-                    m.log(f"placed mid-game Scout #{len(scouts)}/10 at {coord}", "green")
-                    m.sleep(0.06)
-                    continue
-
-        # PRIORITY 6: Dual & Triple Superpower - Rush Scouts #2 and #3 to Level 4 MAX (180 DPS combined!)
-        # 6a. Scout #2 to Level 3 ($950)
+        # PRIORITY 5: Triple Superpower - Rush Scouts #2 and #3 to Level 4 MAX (180 DPS combined!)
+        # With 180 DPS at the bridge entrance, Breakers and Slow Boss on Waves 14-16 melt effortlessly!
+        # 5a. Scout #2 to Level 3 ($950)
         if len(scouts) >= 2 and can_upgrade(scouts[1]) and scouts[1].get("level", 0) == 2:
             if cash is None or cash >= 950:
                 if _upgrade_scout_at(m, scouts[1]):
                     m.sleep(0.06)
                     continue
 
-        # 6b. Scout #2 to Level 4 MAX ($2,550)
+        # 5b. Scout #2 to Level 4 MAX ($2,550)
         if len(scouts) >= 2 and can_upgrade(scouts[1]) and scouts[1].get("level", 0) == 3:
             if cash is None or cash >= 2550:
                 if _upgrade_scout_at(m, scouts[1]):
                     m.sleep(0.06)
                     continue
 
-        # 6c. Scout #3 to Level 3 ($950)
+        # 5c. Scout #3 to Level 3 ($950)
         if len(scouts) >= 3 and can_upgrade(scouts[2]) and scouts[2].get("level", 0) == 2:
             if cash is None or cash >= 950:
                 if _upgrade_scout_at(m, scouts[2]):
                     m.sleep(0.06)
                     continue
 
-        # 6d. Scout #3 to Level 4 MAX ($2,550)
+        # 5d. Scout #3 to Level 4 MAX ($2,550)
         if len(scouts) >= 3 and can_upgrade(scouts[2]) and scouts[2].get("level", 0) == 3:
             if cash is None or cash >= 2550:
                 if _upgrade_scout_at(m, scouts[2]):
+                    m.sleep(0.06)
+                    continue
+
+        # PRIORITY 6: Mid-Game Army Expansion (Place up to 8 scouts)
+        if len(scouts) < min(8, target_scouts) and len(scouts) < len(slots):
+            if cash is None or cash >= 250:
+                coord = _place_next_scout(m, slots, scouts, failed_slots)
+                if coord is not None:
+                    scouts.append({"coord": coord, "level": 0, "maxed": False})
+                    m.scouts_placed = len(scouts)
+                    m.log(f"placed mid-game Scout #{len(scouts)}/8 at {coord}", "green")
                     m.sleep(0.06)
                     continue
 
@@ -809,7 +953,7 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                 continue
 
         # Step H: Max Assurance Sweep - periodically check any unmaxed scouts
-        if now - last_sweep_time > 15.0 and (cash is None or cash >= 950):
+        if now - last_sweep_time > 12.0 and (cash is None or cash >= 950):
             last_sweep_time = now
             for s in scouts:
                 if not s.get("maxed", False):

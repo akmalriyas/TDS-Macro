@@ -40,19 +40,24 @@ def dismiss_popups(m: Macro, max_rounds: int = 5) -> bool:
         lines = m.ocr.recognize(frame)
         text = " ".join(l.norm for l in lines)
 
-        # 1. Login Rewards / Daily Rewards popup with a 'CLOSE' button
-        if any(k in text for k in ("login rewards", "login streak", "daily rewards", "streak", "day streak", "rewards scale")):
-            close_btn = find_line(lines, "close", exact=True) or find_line(lines, "close", fuzzy=0.75)
-            if close_btn is not None:
-                m.log(f"closing Login Rewards popup via CLOSE button at {close_btn.box.center}", "cyan")
-                inp.click_box(close_btn.box.tuple)
+        # 1. Login Rewards / Daily Rewards popup with a 'CLAIM' or 'CLOSE' button
+        if any(k in text for k in ("login rewards", "login streak", "daily rewards", "streak", "day streak", "rewards scale", "claim!")):
+            action_btn = (
+                find_line(lines, "claim", exact=True)
+                or find_line(lines, "claim", fuzzy=0.75)
+                or find_line(lines, "close", exact=True)
+                or find_line(lines, "close", fuzzy=0.75)
+            )
+            if action_btn is not None:
+                m.log(f"closing Login Rewards popup via button '{action_btn.text}' at {action_btn.box.center}", "cyan")
+                inp.click_box(action_btn.box.tuple)
                 time.sleep(1.0)
                 dismissed = True
                 continue
-            # Fallback: click bottom-center of modal where CLOSE button sits
+            # Fallback: click bottom-center of modal where CLAIM/CLOSE button sits (y ~ 975 in 2560x1440)
             h, w = frame.shape[:2]
-            m.log("clicking calibrated Login Rewards CLOSE button at center-bottom", "yellow")
-            inp.click(int(w * 0.50), int(h * 0.77))
+            m.log("clicking calibrated Login Rewards CLAIM/CLOSE button at center (1280, 975)", "yellow")
+            inp.click(int(round(w * 0.50)), int(round(h * 0.678)))
             time.sleep(1.0)
             dismissed = True
             continue

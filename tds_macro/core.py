@@ -330,8 +330,9 @@ class Macro:
         """Read exact cash and placed tower count simultaneously from bottom hotbar HUD."""
         frame = self.grab() if frame is None else frame
         h, w = frame.shape[:2]
-        y1, y2 = max(0, 1320), min(h, 1425)
-        x1, x2 = max(0, 1460), min(w, 1660)
+        # Broaden crop region to guarantee coverage across all resolutions & hotbar offsets
+        y1, y2 = max(0, 1260), min(h, 1435)
+        x1, x2 = max(0, 1340), min(w, 1850)
         crop = frame[y1:y2, x1:x2]
         cash = None
         towers = (None, None)
@@ -341,28 +342,42 @@ class Macro:
             crop_2x = cv2.resize(crop, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
             lines = self.ocr.recognize(crop_2x)
 
-            # 1. Tower count parser (e.g. '0/41', '1/41', '6/41', '18/41', 'o ; 41')
+            # 1. Tower count parser (e.g. '0/41', '1/41', '6/41', '18/41', 'o ; 41', '0/4z')
             for line in lines:
                 clean = re.sub(r"[oO]", "0", line.text)
-                m = re.search(r"(\d{1,2})\s*[/@|;:!1\s]\s*(4[01])", clean)
+                m = re.search(r"(\d{1,2})\s*[/@|;:!1zZ\s]\s*(4[01zZ])", clean)
                 if m:
-                    towers = (int(m.group(1)), int(m.group(2)))
+                    towers = (int(m.group(1)), 41)
                     self.scouts_placed = max(self.scouts_placed, towers[0])
                     break
 
-            # 2. Cash parser (handles $, s, S, +, and digit rows)
+            # 2. Cash parser: prioritize explicit '$' prefix first, then fallback to digit string
             for line in lines:
                 text = line.text.strip()
                 if towers[0] is not None and str(towers[1]) in text:
                     continue
                 clean = re.sub(r"^[sS+¢&]+\s*", "$", text).replace(",", "")
-                m = re.search(r"(?:\$|s|\+)?\s*(\d+)", clean)
-                if m:
-                    v = int(m.group(1))
+                m_dollar = re.search(r"\$\s*(\d+)", clean)
+                if m_dollar:
+                    v = int(m_dollar.group(1))
                     if v not in (40, 41) and 0 <= v <= 999999:
                         cash = v
                         self.current_cash = v
                         break
+
+            if cash is None:
+                for line in lines:
+                    text = line.text.strip()
+                    if towers[0] is not None and str(towers[1]) in text:
+                        continue
+                    clean = re.sub(r"^[sS+¢&]+\s*", "$", text).replace(",", "")
+                    m_gen = re.search(r"(?:\$|s|\+)?\s*(\d+)", clean)
+                    if m_gen:
+                        v = int(m_gen.group(1))
+                        if v not in (40, 41) and 0 <= v <= 999999:
+                            cash = v
+                            self.current_cash = v
+                            break
 
         if cash is not None or towers[0] is not None:
             self.notify_status()
