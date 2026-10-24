@@ -184,6 +184,11 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal
 function updateDock() {
   const s = state;
   if (!s) return;
+  if (s.version) {
+    const v = "v" + s.version;
+    const el = document.getElementById("brand-version") || document.querySelector(".ver");
+    if (el && el.textContent !== v) el.textContent = v;
+  }
   const run = s.status === "RUNNING", pause = s.status === "PAUSED", idle = s.status === "IDLE";
   const empty = !s.tasks || s.tasks.length === 0;
   $("#dot").className = "dot " + (run ? "run" : pause ? "pause" : "");

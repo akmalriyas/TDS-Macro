@@ -234,13 +234,6 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, i
             time.sleep(0.06)
             return (tx, ty)
 
-        # Fallback: if clear ground was verified right before click and this is the primary slot,
-        # accept placement to maintain combat line integrity
-        if ox == 0 and oy == 0:
-            m.log(f"Scout placed at primary ({tx}, {ty}) (unobstructed terrain confirmed)", "green")
-            m.press("q")
-            time.sleep(0.06)
-            return (tx, ty)
 
     # Cancel placement mode if all offsets failed
     m.press("q")
@@ -253,39 +246,56 @@ def _is_tower_card_open(m: Macro) -> tuple[bool, Optional[int], bool]:
     Returns (is_open, current_level, is_maxed)."""
     frame = m.grab()
 
-    # 1. Instant visual check (<0.1ms): Upgrade button panel at (80, 750, 180, 80)
-    up_roi = frame[750:830, 80:260]
-    g_mean = float(up_roi[:, :, 1].mean()) if up_roi.size else 0.0
-    r_mean = float(up_roi[:, :, 2].mean()) if up_roi.size else 0.0
-    vis_open = (g_mean > 50.0 and r_mean > 50.0)
-
-    # 2. Comprehensive OCR check over full card region
-    lines = m.ocr.recognize(frame, (0, 360, 520, 600))
+    # 1. Comprehensive OCR check over full card region (0, 320, 560, 680)
+    lines = m.ocr.recognize(frame, (0, 320, 560, 680))
     text = " ".join(l.norm for l in lines)
+    raw_text = " ".join(l.text for l in lines)
+
     ocr_open = any(k in text for k in (
         "scout", "stat", "target", "level", "cost", "damage", "upgrade",
-        "aim", "dps", "sell", "hidden", "first", "strongest"
+        "aim", "dps", "sell", "hidden", "first", "strongest", "range",
+        "firerate", "last", "weakest", "random", "lead", "flying"
     ))
-    is_maxed = ("max level" in text or "maxed" in text or "max" in text)
 
+    # 2. Visual check: Sell button ROI [840:910, 80:260] (distinct saturated crimson red)
+    sell_roi = frame[840:910, 80:260]
+    has_sell_btn = False
+    if sell_roi.size:
+        r_chan = sell_roi[:, :, 2].astype(int)
+        g_chan = sell_roi[:, :, 1].astype(int)
+        b_chan = sell_roi[:, :, 0].astype(int)
+        has_sell_btn = int(((r_chan > 120) & (r_chan > g_chan * 1.3) & (r_chan > b_chan * 1.3)).sum()) > 60
+
+    is_open = ocr_open or has_sell_btn
+    if not is_open:
+        return False, None, False
+
+    is_maxed = ("max level" in text or "maxed" in text or "max" in text)
     current_level = None
     if is_maxed:
         current_level = 4
     else:
-        m_lvl = re.search(r"level\s*[:#]?\s*(\d)", text)
+        m_lvl = re.search(r"(?:level|lvl|lv)\s*[:#]?\s*([0-4])", text)
         if m_lvl:
             current_level = int(m_lvl.group(1))
+        elif "2550" in text or "2,550" in raw_text:
+            current_level = 3
+        elif "950" in text:
+            current_level = 2
+        elif "250" in text:
+            current_level = 1
+        elif "100" in text:
+            current_level = 0
 
-    is_open = vis_open or ocr_open
-    return is_open, current_level, is_maxed
+    return True, current_level, is_maxed
 
 
 def deselect_tower(m: Macro) -> None:
     """Safely deselect any currently selected tower and ensure the upgrade card is closed.
-    Clicks neutral empty space at (650, 220) and presses 'Q'."""
-    inp.click(650, 220, hold=0.03, settle=0.04)
+    Clicks neutral empty space at (320, 160) and presses 'Q'."""
+    inp.click(320, 160, hold=0.03, settle=0.04)
     m.press("q")
-    time.sleep(0.08)
+    time.sleep(0.06)
 
 
 def _upgrade_scout_at(m: Macro, scout: dict, presses: int = 1) -> bool:
@@ -298,31 +308,28 @@ def _upgrade_scout_at(m: Macro, scout: dict, presses: int = 1) -> bool:
     coord = scout["coord"]
     m.touch()
 
-    # Step 0: Ensure any previously opened card is closed so we never misread another tower's stats
-    deselect_tower(m)
+    # Step 1: Check if the card is already open
+    card_opened, card_level, is_max = _is_tower_card_open(m)
 
-    # Step 1: Click the tower mesh to open its upgrade card
-    card_opened = False
-    card_level = None
-    is_max = False
-    offsets = [(0, 0), (0, -20), (0, -35), (0, -10), (-15, -15), (15, -15), (0, 15)]
-    for dx, dy in offsets:
-        inp.click_3d(coord[0] + dx, coord[1] + dy, hold=0.04, settle=0.06)
-        time.sleep(0.20)  # Wait for UI tween
-        card_opened, card_level, is_max = _is_tower_card_open(m)
-        if card_opened:
-            break
-        # Fallback with standard 2D mapping in case camera was at exact 16:9
-        inp.click(coord[0] + dx, coord[1] + dy, hold=0.04, settle=0.06)
-        time.sleep(0.20)
-        card_opened, card_level, is_max = _is_tower_card_open(m)
-        if card_opened:
-            break
+    if not card_opened:
+        # Click 3D tower mesh: prioritize torso (-25), head (-38), waist (-12), and shoulders (-14, -25), (14, -25)
+        offsets = [(0, -25), (0, -38), (0, -12), (-14, -25), (14, -25)]
+        for dx, dy in offsets:
+            inp.click_3d(coord[0] + dx, coord[1] + dy, hold=0.04, settle=0.06)
+            time.sleep(0.28)  # Allow UI slide-in tween to complete
+            card_opened, card_level, is_max = _is_tower_card_open(m)
+            if card_opened:
+                break
 
     # If the card did not open after all offsets:
     if not card_opened:
+        scout["failed_upgrades"] = scout.get("failed_upgrades", 0) + 1
+        scout["last_failed_time"] = time.time()
         deselect_tower(m)
         return False
+
+    # Reset failure counter on successful card opening
+    scout["failed_upgrades"] = 0
 
     # If already Level 4 MAX:
     if is_max or (card_level is not None and card_level >= 4) or scout.get("level", 0) >= 4:
@@ -670,8 +677,18 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                 last_skip_time = now
                 time.sleep(0.35)
 
-        # PRIORITY 1: Core Trio Setup - Ensure all existing scouts are at least Level 2 (8 DPS each)
-        under_l2 = [s for s in scouts if not s.get("maxed", False) and s.get("level", 0) < 2]
+        # Anti-stall helper: check if a scout is eligible for an upgrade attempt
+        def can_upgrade(s: dict) -> bool:
+            if s.get("maxed", False):
+                return False
+            # If it failed 2 or more times recently, give it a 10s cooldown
+            # so the macro continues upgrading other scouts / placing towers
+            if s.get("failed_upgrades", 0) >= 2 and (time.time() - s.get("last_failed_time", 0.0) < 10.0):
+                return False
+            return True
+
+        # PRIORITY 1: Core Upgrades - Ensure all existing placed scouts are at least Level 2 (8 DPS each)
+        under_l2 = [s for s in scouts if can_upgrade(s) and s.get("level", 0) < 2]
         if under_l2:
             target = under_l2[0]
             needed = 100 if target.get("level", 0) == 0 else 250
@@ -680,64 +697,73 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 2: Place Core Trio (Scouts #1, #2, #3)
-        # We only place the next core scout once existing ones are upgraded to Level 2!
-        if len(scouts) < 3 and len(scouts) < len(slots):
+        # PRIORITY 2: Early Core Placement (Place up to 6 scouts early for wide line coverage)
+        # Having 6 Level-2 scouts by Wave 5 guarantees 48 DPS and shreds early mobs/swarms
+        if len(scouts) < min(6, target_scouts) and len(scouts) < len(slots):
             if cash is None or cash >= 250:
                 coord = _place_next_scout(m, slots, scouts, failed_slots)
                 if coord is not None:
                     scouts.append({"coord": coord, "level": 0, "maxed": False})
                     m.scouts_placed = len(scouts)
-                    m.log(f"placed core Scout #{len(scouts)}/3 at {coord}", "green")
+                    m.log(f"placed early Scout #{len(scouts)}/6 at {coord}", "green")
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 3: First Superpower - Rush Scout #1 to Level 4 MAX ($2,550 -> 60 DPS monster!)
-        # 3a. Scout #1 to Level 3 ($950) -> Lead Detection + 23.3 DPS
-        if len(scouts) >= 1 and scouts[0].get("level", 0) == 2 and not scouts[0].get("maxed", False):
+        # PRIORITY 3: Rush Scout #1 to Level 3 ($950) -> Lead Detection before Wave 7!
+        if len(scouts) >= 1 and can_upgrade(scouts[0]) and scouts[0].get("level", 0) == 2:
             if cash is None or cash >= 950:
                 if _upgrade_scout_at(m, scouts[0]):
                     m.sleep(0.06)
                     continue
 
-        # 3b. Scout #1 to Level 4 MAX ($2,550) -> 60 DPS + Hidden Detection
-        if len(scouts) >= 1 and scouts[0].get("level", 0) == 3 and not scouts[0].get("maxed", False):
+        # PRIORITY 4: Rush Scout #1 to Level 4 MAX ($2,550) -> 60 DPS Monster + Hidden Detection before Wave 10!
+        if len(scouts) >= 1 and can_upgrade(scouts[0]) and scouts[0].get("level", 0) == 3:
             if cash is None or cash >= 2550:
                 if _upgrade_scout_at(m, scouts[0]):
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 4: Dual Superpower - Rush Scout #2 to Level 4 MAX (120 DPS combined!)
-        # 4a. Scout #2 to Level 3 ($950)
-        if len(scouts) >= 2 and scouts[1].get("level", 0) == 2 and not scouts[1].get("maxed", False):
+        # PRIORITY 5: Mid-Game Expansion (Place up to 10 scouts before rushing next MAX)
+        if len(scouts) < min(10, target_scouts) and len(scouts) < len(slots):
+            if cash is None or cash >= 250:
+                coord = _place_next_scout(m, slots, scouts, failed_slots)
+                if coord is not None:
+                    scouts.append({"coord": coord, "level": 0, "maxed": False})
+                    m.scouts_placed = len(scouts)
+                    m.log(f"placed mid-game Scout #{len(scouts)}/10 at {coord}", "green")
+                    m.sleep(0.06)
+                    continue
+
+        # PRIORITY 6: Dual & Triple Superpower - Rush Scouts #2 and #3 to Level 4 MAX (180 DPS combined!)
+        # 6a. Scout #2 to Level 3 ($950)
+        if len(scouts) >= 2 and can_upgrade(scouts[1]) and scouts[1].get("level", 0) == 2:
             if cash is None or cash >= 950:
                 if _upgrade_scout_at(m, scouts[1]):
                     m.sleep(0.06)
                     continue
 
-        # 4b. Scout #2 to Level 4 MAX ($2,550)
-        if len(scouts) >= 2 and scouts[1].get("level", 0) == 3 and not scouts[1].get("maxed", False):
+        # 6b. Scout #2 to Level 4 MAX ($2,550)
+        if len(scouts) >= 2 and can_upgrade(scouts[1]) and scouts[1].get("level", 0) == 3:
             if cash is None or cash >= 2550:
                 if _upgrade_scout_at(m, scouts[1]):
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 5: Triple Superpower - Rush Scout #3 to Level 4 MAX (180 DPS combined!)
-        # 5a. Scout #3 to Level 3 ($950)
-        if len(scouts) >= 3 and scouts[2].get("level", 0) == 2 and not scouts[2].get("maxed", False):
+        # 6c. Scout #3 to Level 3 ($950)
+        if len(scouts) >= 3 and can_upgrade(scouts[2]) and scouts[2].get("level", 0) == 2:
             if cash is None or cash >= 950:
                 if _upgrade_scout_at(m, scouts[2]):
                     m.sleep(0.06)
                     continue
 
-        # 5b. Scout #3 to Level 4 MAX ($2,550)
-        if len(scouts) >= 3 and scouts[2].get("level", 0) == 3 and not scouts[2].get("maxed", False):
+        # 6d. Scout #3 to Level 4 MAX ($2,550)
+        if len(scouts) >= 3 and can_upgrade(scouts[2]) and scouts[2].get("level", 0) == 3:
             if cash is None or cash >= 2550:
                 if _upgrade_scout_at(m, scouts[2]):
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 6: Gauntlet Army Expansion (Place Scouts 4, 5, 6... up to target_scouts)
+        # PRIORITY 7: Full Army Expansion (Place Scouts up to target_scouts)
         if len(scouts) < target_scouts and len(scouts) < len(slots):
             if cash is None or cash >= 250:
                 coord = _place_next_scout(m, slots, scouts, failed_slots)
@@ -748,31 +774,31 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 7: Upgrade any remaining Level 3 scouts to Level 4 MAX ($2,550)
-        under_l4 = [s for s in scouts if not s.get("maxed", False) and s.get("level", 0) == 3]
+        # PRIORITY 8: Mass Upgrade - Any remaining Level 3 scouts to Level 4 MAX ($2,550)
+        under_l4 = [s for s in scouts if can_upgrade(s) and s.get("level", 0) == 3]
         if under_l4 and (cash is None or cash >= 2550):
             target = under_l4[0]
             if _upgrade_scout_at(m, target):
                 m.sleep(0.06)
                 continue
 
-        # PRIORITY 8: Upgrade any remaining Level 2 scouts to Level 3 ($950)
-        under_l3 = [s for s in scouts if not s.get("maxed", False) and s.get("level", 0) == 2]
+        # PRIORITY 9: Mass Upgrade - Any remaining Level 2 scouts to Level 3 ($950)
+        under_l3 = [s for s in scouts if can_upgrade(s) and s.get("level", 0) == 2]
         if under_l3 and (cash is None or cash >= 950):
             target = under_l3[0]
             if _upgrade_scout_at(m, target):
                 m.sleep(0.06)
                 continue
 
-        # PRIORITY 9: Surplus Cash Sink - if cash >= $1,000, max any unmaxed scout
-        any_unmaxed = [s for s in scouts if not s.get("maxed", False)]
+        # PRIORITY 10: Surplus Cash Sink - if cash >= $1,000, upgrade any unmaxed scout
+        any_unmaxed = [s for s in scouts if can_upgrade(s)]
         if any_unmaxed and cash is not None and cash >= 1000:
             target = any_unmaxed[0]
             if _upgrade_scout_at(m, target):
                 m.sleep(0.06)
                 continue
 
-        # PRIORITY 10: Surplus Placement - if all existing scouts are maxed and slots remain
+        # PRIORITY 11: Surplus Placement - if all existing scouts are maxed and slots remain
         if len(scouts) < len(slots) and (cash is None or cash >= 250):
             coord = _place_next_scout(m, slots, scouts, failed_slots)
             if coord is not None:
