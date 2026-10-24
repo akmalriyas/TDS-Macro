@@ -428,61 +428,71 @@ def select_modifiers(m: Macro) -> None:
         base_x = 902
         base_y = 236
 
-    # Dynamic tile centers from modal base:
+    # Calibrated tile centers from modal base (exact 95x95 tile boxes):
     # Row 0:
-    # Col 1 (Glass): base_x + 204, base_y + 214 (ref: 1106, 450)
-    # Col 2 (Bomb / Exploding Enemies): base_x + 316, base_y + 214 (ref: 1218, 450)
+    # Col 1 (Glass): base_x + 203, base_y + 213 -> (1105, 449)
+    # Col 2 (Exploding Enemies): base_x + 315, base_y + 213 -> (1217, 449)
     dynamic_coords = {
-        "glass": (base_x + 204, base_y + 214),
-        "explosive": (base_x + 316, base_y + 214),
-        "exploding enemies": (base_x + 316, base_y + 214),
-        "bomb": (base_x + 316, base_y + 214),
+        "glass": (base_x + 203, base_y + 213),
+        "explosive": (base_x + 315, base_y + 213),
+        "exploding enemies": (base_x + 315, base_y + 213),
+        "bomb": (base_x + 315, base_y + 213),
     }
 
     target_count = len(targets)
-    for attempt in range(3):
-        m.check_interrupts()
-        # Click each modifier with adequate settle time
-        for mod_name in targets:
-            coord = dynamic_coords.get(mod_name) or MODIFIER_COORDS.get(mod_name)
-            if not coord:
-                for k, c in dynamic_coords.items():
-                    if k in mod_name or mod_name in k:
-                        coord = c
-                        break
-            if coord:
-                m.log(f"clicking modifier '{mod_name}' at {coord} (modal base: {base_x}, {base_y})", "cyan")
-                inp.click(coord[0], coord[1], hold=0.06, settle=0.30)
-                time.sleep(0.40)
-                m.focus()
-            else:
-                m.log(f"modifier '{mod_name}' has no calibrated click coordinates; skipping click", "yellow")
 
-        # Verify selected count: check "Selected Modifiers (2/13)" text at bottom of panel
-        time.sleep(0.50)
+    # 1. First check if modifiers are ALREADY selected (e.g. from previous run / persistent state)
+    v_frame = m.grab()
+    v_lines = m.ocr.recognize(v_frame, (base_x, base_y + 600, 750, 350))
+    v_text = " ".join(l.norm for l in v_lines)
+    if f"{target_count}/13" in v_text or f"{target_count} / 13" in v_text:
+        m.log(f"SUCCESS: All {target_count} modifiers already selected ({target_count}/13)!", "bold green")
+        m.snap("modifier_selected")
+        return
+
+    # 2. Click each target modifier ONCE with solid hold and settle time
+    for mod_name in targets:
+        coord = dynamic_coords.get(mod_name) or (1105, 449) if "glass" in mod_name else (1217, 449)
+        m.log(f"clicking modifier '{mod_name}' at {coord} (modal base: {base_x}, {base_y})", "cyan")
+        inp.click(coord[0], coord[1], hold=0.08, settle=0.35)
+        time.sleep(0.35)
+        m.focus()
+
+    # 3. Verify selected count: check "Selected Modifiers (2/13)" text at bottom of panel
+    time.sleep(0.50)
+    v_frame = m.grab()
+    v_lines = m.ocr.recognize(v_frame, (base_x, base_y + 600, 750, 350))
+    v_text = " ".join(l.norm for l in v_lines)
+    m.log(f"selected modifiers OCR text: {v_text}", "dim")
+
+    if f"{target_count}/13" in v_text or f"{target_count} / 13" in v_text or f"{target_count}/ 13" in v_text:
+        m.log(f"SUCCESS: All {target_count} modifiers selected ({target_count}/13)!", "bold green")
+        m.snap("modifier_selected")
+        return
+
+    # 4. If only 1/13 registered, Col 2 (Exploding Enemies) was missed. Click ONLY Col 2 once!
+    if "1/13" in v_text or "1 / 13" in v_text or "1/ 13" in v_text:
+        m.log("Only 1 modifier registered; clicking Exploding Enemies (Col 2) to complete pair", "yellow")
+        col2 = dynamic_coords.get("exploding enemies", (base_x + 315, base_y + 213))
+        inp.click(col2[0], col2[1], hold=0.08, settle=0.35)
+        time.sleep(0.40)
         v_frame = m.grab()
         v_lines = m.ocr.recognize(v_frame, (base_x, base_y + 600, 750, 350))
         v_text = " ".join(l.norm for l in v_lines)
-        m.log(f"selected modifiers OCR text: {v_text}", "dim")
-
-        if f"{target_count}/13" in v_text or f"{target_count} / 13" in v_text or f"{target_count}/ 13" in v_text:
+        if f"{target_count}/13" in v_text or f"{target_count} / 13" in v_text:
             m.log(f"SUCCESS: All {target_count} modifiers selected ({target_count}/13)!", "bold green")
             m.snap("modifier_selected")
             return
 
-        # If only 1/13 is registered, retry clicking Exploding Enemies (Col 2)
-        if "1/13" in v_text or "1 / 13" in v_text:
-            m.log("Only 1 modifier selected (1/13); re-clicking Exploding Enemies tile", "yellow")
-            col2 = dynamic_coords.get("exploding enemies", (base_x + 316, base_y + 214))
-            inp.click(col2[0], col2[1], hold=0.06, settle=0.30)
-            time.sleep(0.40)
-            v_frame = m.grab()
-            v_lines = m.ocr.recognize(v_frame, (base_x, base_y + 600, 750, 350))
-            v_text = " ".join(l.norm for l in v_lines)
-            if f"{target_count}/13" in v_text or f"{target_count} / 13" in v_text:
-                m.log(f"SUCCESS: All {target_count} modifiers selected ({target_count}/13)!", "bold green")
-                m.snap("modifier_selected")
-                return
+    # 5. If 0/13 registered, re-click Glass then Exploding Enemies once cleanly
+    if "0/13" in v_text or "0 / 13" in v_text:
+        m.log("0/13 registered; clicking Glass and Exploding Enemies once more", "yellow")
+        col1 = dynamic_coords.get("glass", (base_x + 203, base_y + 213))
+        col2 = dynamic_coords.get("exploding enemies", (base_x + 315, base_y + 213))
+        inp.click(col1[0], col1[1], hold=0.08, settle=0.35)
+        time.sleep(0.35)
+        inp.click(col2[0], col2[1], hold=0.08, settle=0.35)
+        time.sleep(0.40)
 
     m.snap("modifier_selected")
 

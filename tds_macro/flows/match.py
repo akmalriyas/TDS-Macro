@@ -341,6 +341,9 @@ def _open_scout_card(m: Macro, coord: tuple[int, int]) -> tuple[bool, Optional[i
     ]
 
     for ox, oy in click_candidates:
+        if m.detect().state in (State.VICTORY, State.DEFEAT):
+            return False, None, False
+
         # Check if card opened before clicking next offset
         is_open, lvl, is_max = _is_tower_card_open(m)
         if is_open:
@@ -354,6 +357,8 @@ def _open_scout_card(m: Macro, coord: tuple[int, int]) -> tuple[bool, Optional[i
         deadline = time.time() + 0.70
         while time.time() < deadline:
             time.sleep(0.08)
+            if m.detect().state in (State.VICTORY, State.DEFEAT):
+                return False, None, False
             is_open, lvl, is_max = _is_tower_card_open(m)
             if is_open:
                 m.selected_scout_coord = coord
@@ -427,6 +432,8 @@ def _upgrade_scout_at(m: Macro, scout: dict | tuple[int, int], presses: int = 1)
     deadline = time.time() + 0.90
     while time.time() < deadline:
         time.sleep(0.08)
+        if m.detect().state in (State.VICTORY, State.DEFEAT):
+            return True
         _, new_lvl, new_max = _is_tower_card_open(m)
         if new_max:
             upgraded = True
@@ -473,10 +480,10 @@ def collect_battlepass_drops(m: Macro) -> None:
     m._custom_status = "Battlepass Farm"
     m.notify_status()
     try:
-        SWEEP_TIME = 0.35
-        # 1. Walk FORWARD (W) along the road median
+        SWEEP_TIME = 1.15
+        # 1. Walk FORWARD (W) along the road median directly into enemy kill-zone drops
         m.hold(["w"], SWEEP_TIME)
-        time.sleep(0.04)
+        time.sleep(0.05)
 
         # 2. Walk BACK (S) down the median with exact matching duration
         m.hold(["s"], SWEEP_TIME)
@@ -883,22 +890,19 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                 m.sleep(0.06)
                 continue
 
-        # Step H: Max Assurance Sweep - periodically check any unmaxed scouts
-        if now - last_sweep_time > 12.0 and (cash is None or cash >= 950):
+        # Step H: Single-target Max Assurance (non-blocking)
+        if now - last_sweep_time > 10.0 and (cash is None or cash >= 950):
             last_sweep_time = now
-            for s in scouts:
-                if not s.get("maxed", False):
-                    if _upgrade_scout_at(m, s, presses=1):
-                        m.sleep(0.06)
-                    m.sleep(0.08)
+            under_max = [s for s in scouts if can_upgrade(s) and not s.get("maxed", False)]
+            if under_max:
+                _upgrade_scout_at(m, under_max[0], presses=1)
 
         # Step I: Battlepass Farm Sweep (collecting seasonal event drops)
-        # Strictly restricted to Wave 17+ and ONLY when Scouts 1, 2, 3 are Level 4 MAX!
-        # Prevents any player collision or camera shift during critical early/mid upgrade phases.
-        bp_interval = getattr(m.settings, "battlepass_interval_s", 16.0)
+        # Active from Wave 7+ whenever primary defense is placed, sweeping every 22s
+        bp_interval = getattr(m.settings, "battlepass_interval_s", 22.0)
         current_w = m.current_wave or 1
-        core_maxed = len(scouts) >= 3 and all(s.get("maxed", False) for s in scouts[:3])
-        if getattr(m.settings, "battlepass_farm", False) and current_w >= 17 and core_maxed and (now - last_bp_sweep >= bp_interval):
+        has_defense = len(scouts) >= 3 and any(s.get("level", 0) >= 2 for s in scouts)
+        if getattr(m.settings, "battlepass_farm", False) and current_w >= 7 and has_defense and (now - last_bp_sweep >= bp_interval):
             last_bp_sweep = now
             collect_battlepass_drops(m)
 

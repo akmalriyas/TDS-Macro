@@ -83,7 +83,7 @@ class StateDetector:
         if (
             _has(lines, "triumph", fuzzy=0.8)
             or _has(lines, "victory", fuzzy=0.8)
-        ) and (_has(lines, "play again") or _has(lines, "return to lobby") or _has(lines, "time completed")):
+        ):
             return Detection(State.VICTORY, lines, 1.0, "triumph")
 
         if _has(lines, "play again") and (_has(lines, "triumph", fuzzy=0.8) or _has(lines, "time completed", fuzzy=0.8) or _has(lines, "return to lobby")):
