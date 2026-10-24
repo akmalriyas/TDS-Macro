@@ -9,6 +9,7 @@ extra_binaries = []
 extra_datas = [
     ('tds_macro/ui/web', 'tds_macro/ui/web'),
     ('tds_macro/assets', 'tds_macro/assets'),
+    ('FlareMacro.exe.config', '.'),
 ]
 extra_hiddenimports = [
     'clr',
@@ -78,3 +79,9 @@ coll = COLLECT(
     upx_exclude=[],
     name='FlareMacro',
 )
+
+import shutil
+try:
+    shutil.copy2('FlareMacro.exe.config', Path('dist') / 'FlareMacro' / 'FlareMacro.exe.config')
+except Exception:
+    pass

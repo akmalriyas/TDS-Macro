@@ -37,10 +37,13 @@ jobs:
       - name: Build with PyInstaller
         run: |
           pyinstaller --noconfirm --clean flare.spec
+          if (Test-Path "FlareMacro.exe.config") {
+            Copy-Item "FlareMacro.exe.config" "dist/FlareMacro/FlareMacro.exe.config" -Force
+          }
 
       - name: Create Portable Zip
         run: |
-          Compress-Archive -Path dist/FlareMacro/* -DestinationPath dist/FlareMacro-Portable.zip
+          Compress-Archive -Path dist/FlareMacro/* -DestinationPath dist/FlareMacro-Portable.zip -Force
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress

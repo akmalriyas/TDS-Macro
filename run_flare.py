@@ -4,6 +4,28 @@ import sys
 import traceback
 from pathlib import Path
 
+
+def _unblock_self() -> None:
+    """Silently remove Windows Mark-of-the-Web (Zone.Identifier) so .NET CLR loads DLLs cleanly."""
+    if sys.platform != "win32":
+        return
+    try:
+        base_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+        for root, _, files in os.walk(base_dir):
+            for file in files:
+                if file.lower().endswith((".dll", ".exe", ".json", ".config", ".pyd")):
+                    stream_path = os.path.join(root, file) + ":Zone.Identifier"
+                    if os.path.exists(stream_path):
+                        try:
+                            os.remove(stream_path)
+                        except Exception:
+                            pass
+    except Exception:
+        pass
+
+
+_unblock_self()
+
 # Global exception logger for windowed execution
 try:
     _appdata = os.environ.get("LOCALAPPDATA")
