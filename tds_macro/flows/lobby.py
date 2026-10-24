@@ -349,10 +349,10 @@ def open_play_menu(m: Macro, timeout: float = 30.0) -> None:
         # Make sure no modal or popup is covering the screen
         dismiss_popups(m, max_rounds=2)
 
-        # Click the green PLAY button (center ~ 1280, 1275)
-        if not m.click_text("play", region=(1100, 1220, 360, 120), timeout=1.0):
-            if not m.click_green(PLAY_BUTTON_REGION, min_area=800):
-                inp.click(1280, 1275, hold=0.06, settle=0.10)
+        # Click the green PLAY button (center ~ 1280, 1220)
+        if not m.click_text("play", region=(1000, 1140, 560, 220), timeout=1.0):
+            if not m.click_green((1100, 1180, 360, 120), min_area=800):
+                inp.click(1280, 1220, hold=0.08, settle=0.15)
 
         time.sleep(1.5)
 
