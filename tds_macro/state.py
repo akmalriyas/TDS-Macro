@@ -73,29 +73,50 @@ class StateDetector:
         text = " | ".join(l.norm for l in lines)
 
         # End-of-match screens first: they also contain Wave/Map text.
-        if (
-            _has(lines, "you lost", fuzzy=0.8)
-            or _has(lines, "defeat", fuzzy=0.8)
-            or _has(lines, "we have to fall back", fuzzy=0.8)
-        ) and (_has(lines, "return to lobby") or _has(lines, "restart match") or _has(lines, "play again")):
-            return Detection(State.DEFEAT, lines, 1.0, "defeat")
+        # Defeat / Victory detection.
+        # Ensure we never confuse intermission boards, elevator leaderboards, or lobby UI with match outcomes.
+        lobby_elements = (
+            "vote for a map", "veto", "ready (", "search for maps", "all maps",
+            "override map", "choose a gamemode", "choose a squad size", "store", "inventory"
+        )
+        in_lobby_or_intermission = any(_has(lines, w) for w in lobby_elements)
 
-        if (
-            _has(lines, "triumph", fuzzy=0.8)
-            or _has(lines, "victory", fuzzy=0.8)
-        ):
-            return Detection(State.VICTORY, lines, 1.0, "triumph")
-
-        if _has(lines, "play again") and (_has(lines, "triumph", fuzzy=0.8) or _has(lines, "time completed", fuzzy=0.8) or _has(lines, "return to lobby")):
-            if _has(lines, "triumph", fuzzy=0.8):
-                return Detection(State.VICTORY, lines, 1.0, "triumph")
-            if _has(lines, "defeat", fuzzy=0.8):
+        if not in_lobby_or_intermission:
+            if (
+                _has(lines, "you lost", fuzzy=0.8)
+                or _has(lines, "defeat", fuzzy=0.8)
+                or _has(lines, "we have to fall back", fuzzy=0.8)
+                or _has(lines, "game over", fuzzy=0.8)
+            ) and (
+                _has(lines, "return to lobby")
+                or _has(lines, "restart match")
+                or _has(lines, "play again")
+                or _has(lines, "time completed")
+                or (_has(lines, "base health") and _has(lines, "wave"))
+            ):
                 return Detection(State.DEFEAT, lines, 1.0, "defeat")
-            return Detection(State.VICTORY, lines, 0.8, "results")
-        if _has(lines, "triumph", fuzzy=0.8) and _has(lines, "wave"):
-            return Detection(State.VICTORY, lines, 0.9, "triumph")
-        if _has(lines, "defeat", fuzzy=0.8) and (_has(lines, "play again") or _has(lines, "return to lobby")):
-            return Detection(State.DEFEAT, lines, 0.9, "defeat")
+
+            if (
+                _has(lines, "triumph", fuzzy=0.8)
+                or _has(lines, "victory", fuzzy=0.8)
+            ) and (
+                _has(lines, "play again")
+                or _has(lines, "return to lobby")
+                or _has(lines, "time completed")
+                or (_has(lines, "base health") and _has(lines, "wave"))
+            ):
+                return Detection(State.VICTORY, lines, 1.0, "triumph")
+
+            if _has(lines, "play again") and (_has(lines, "triumph", fuzzy=0.8) or _has(lines, "time completed", fuzzy=0.8) or _has(lines, "return to lobby")):
+                if _has(lines, "triumph", fuzzy=0.8):
+                    return Detection(State.VICTORY, lines, 1.0, "triumph")
+                if _has(lines, "defeat", fuzzy=0.8):
+                    return Detection(State.DEFEAT, lines, 1.0, "defeat")
+                return Detection(State.VICTORY, lines, 0.8, "results")
+            if _has(lines, "triumph", fuzzy=0.8) and _has(lines, "wave"):
+                return Detection(State.VICTORY, lines, 0.9, "triumph")
+            if _has(lines, "defeat", fuzzy=0.8) and (_has(lines, "play again") or _has(lines, "return to lobby")):
+                return Detection(State.DEFEAT, lines, 0.9, "defeat")
         disc_terms = (
             "disconnected",
             "reconnect",

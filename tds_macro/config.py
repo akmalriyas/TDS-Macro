@@ -70,7 +70,7 @@ class RunSettings:
     max_upgrade_before_wave: int = 20
     verify_scout_once: bool = True
     use_play_again: bool = True
-    battlepass_farm: bool = False
+    battlepass_farm: bool = True
     battlepass_interval_s: float = 12.0
 
     # Loop

@@ -83,10 +83,10 @@ def is_valid_placement_spot(frame: np.ndarray, x: int, y: int) -> bool:
     g = roi[:, :, 1].astype(int)
     r = roi[:, :, 2].astype(int)
 
-    # In TDS, invalid spots show a distinctive bright neon-red pedestal:
-    red_invalid_mask = (r > 130) & (r > (g * 1.30).astype(int)) & (r > (b * 1.30).astype(int))
+    # In TDS, invalid obstructed spots show a distinctive bright neon-red glowing pedestal:
+    red_invalid_mask = (r > 160) & (r > (g * 1.60).astype(int)) & (r > (b * 1.60).astype(int))
     red_count = int(red_invalid_mask.sum())
-    return red_count < 100
+    return red_count < 400
 
 
 def _find_top_green_chevron(frame: np.ndarray) -> Optional[tuple[int, int]]:
@@ -190,6 +190,9 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, i
     ]
 
     for ox, oy in search_offsets:
+        if m.detect().state in (State.VICTORY, State.DEFEAT):
+            m.press("q")
+            return None
         tx, ty = sx + ox, sy + oy
         m.check_interrupts()
 
@@ -210,8 +213,10 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, i
         cash_before = m.read_cash(frame)
         t_before, _ = m.read_tower_count(frame)
 
-        # 3. Click to place in 3D
-        inp.click_3d(tx, ty, hold=0.06, settle=0.08)
+        # 3. Click to place in 3D + press 'e' (TDS placement keybind)
+        inp.click_3d(tx, ty, hold=0.08, settle=0.08)
+        m.press("e")
+        time.sleep(0.04)
 
         # 4. Wait for server replication (up to 1.0s polling)
         placed = False
@@ -881,7 +886,7 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                 continue
 
         # PRIORITY 11: Surplus Placement - if all existing scouts are maxed and slots remain
-        if len(scouts) < len(slots) and (cash is None or cash >= 250):
+        if len(scouts) < target_scouts and len(scouts) < len(slots) and (cash is None or cash >= 250):
             coord = _place_next_scout(m, slots, scouts, failed_slots)
             if coord is not None:
                 scouts.append({"coord": coord, "level": 0, "maxed": False})
