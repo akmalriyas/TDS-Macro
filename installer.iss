@@ -2,7 +2,7 @@
 ; Flare Macro - Standalone Installer
 
 #define MyAppName "Flare Macro"
-#define MyAppVersion "1.0.7"
+#define MyAppVersion "1.0.8"
 #define MyAppPublisher "Akmal Riyas"
 #define MyAppURL "https://github.com/akmalriyas/TDS-Macro"
 #define MyAppExeName "FlareMacro.exe"

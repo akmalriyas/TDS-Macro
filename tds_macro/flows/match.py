@@ -248,28 +248,39 @@ def _is_tower_card_open(m: Macro) -> tuple[bool, Optional[int], bool]:
     Returns (is_open, current_level, is_maxed)."""
     frame = m.grab()
 
-    # 1. Fast visual check (<0.1ms): Sell button ROI [830:920, 70:270] (saturated crimson red)
+    # 1. Fast visual checks (<0.1ms):
+    # Sell button ROI [800:940, 60:290] (saturated crimson red)
+    # Upgrade button ROI [710:830, 60:290] (bright cyan / blue / green)
     has_sell_btn = False
+    has_upgrade_btn = False
     if isinstance(frame, np.ndarray) and frame.ndim == 3:
-        sell_roi = frame[830:920, 70:270]
+        sell_roi = frame[800:940, 60:290]
         if sell_roi.size:
             r_chan = sell_roi[:, :, 2].astype(int)
             g_chan = sell_roi[:, :, 1].astype(int)
             b_chan = sell_roi[:, :, 0].astype(int)
-            has_sell_btn = int(((r_chan > 120) & (r_chan > g_chan * 1.3) & (r_chan > b_chan * 1.3)).sum()) > 45
+            has_sell_btn = int(((r_chan > 120) & (r_chan > g_chan * 1.3) & (r_chan > b_chan * 1.3)).sum()) > 40
 
-    # 2. Comprehensive OCR check over full card region (0, 300, 580, 700)
-    lines = m.ocr.recognize(frame, (0, 300, 580, 700))
+        upg_roi = frame[710:830, 60:290]
+        if upg_roi.size:
+            r_upg = upg_roi[:, :, 2].astype(int)
+            g_upg = upg_roi[:, :, 1].astype(int)
+            b_upg = upg_roi[:, :, 0].astype(int)
+            has_upgrade_btn = int(((b_upg > 110) & (g_upg > 100) & (r_upg < 120)).sum()) > 50
+
+    # 2. Comprehensive OCR check over full card region (0, 280, 620, 750)
+    lines = m.ocr.recognize(frame, (0, 280, 620, 750))
     text = " ".join(l.norm for l in lines)
     raw_text = " ".join(l.text for l in lines)
 
     ocr_open = any(k in text for k in (
         "scout", "stat", "target", "level", "cost", "damage", "upgrade",
         "aim", "dps", "sell", "hidden", "first", "strongest", "range",
-        "firerate", "last", "weakest", "random", "lead", "flying"
+        "firerate", "last", "weakest", "random", "lead", "flying",
+        "100", "250", "950", "2550", "2,550"
     ))
 
-    is_open = ocr_open or has_sell_btn
+    is_open = ocr_open or has_sell_btn or has_upgrade_btn
     if not is_open:
         return False, None, False
 
@@ -319,35 +330,34 @@ def _open_scout_card(m: Macro, coord: tuple[int, int]) -> tuple[bool, Optional[i
     if getattr(m, "selected_scout_coord", None) is not None or _is_tower_card_open(m)[0]:
         deselect_tower(m)
 
-    # 3. Primary click on tower torso (-22)
-    inp.click_3d(coord[0], coord[1] - 22, hold=0.04, settle=0.06)
-    deadline = time.time() + 0.45
-    while time.time() < deadline:
-        time.sleep(0.06)
+    # 3. Candidate click offsets around (tx, ty) based on placed scout geometry:
+    # Model center/torso at (0, -12), base ring at (0, 0), upper torso/head at (0, -26)
+    click_candidates = [
+        (0, -12),   # Torso center (primary hit target)
+        (0, 0),     # Base pedestal ring
+        (0, -26),   # Upper torso / head
+        (-12, -12), # Left torso
+        (12, -12),  # Right torso
+    ]
+
+    for ox, oy in click_candidates:
+        # Check if card opened before clicking next offset
         is_open, lvl, is_max = _is_tower_card_open(m)
         if is_open:
             m.selected_scout_coord = coord
             return True, lvl, is_max
 
-    # 4. Fallback click on head (-35)
-    inp.click_3d(coord[0], coord[1] - 35, hold=0.04, settle=0.06)
-    deadline = time.time() + 0.45
-    while time.time() < deadline:
-        time.sleep(0.06)
-        is_open, lvl, is_max = _is_tower_card_open(m)
-        if is_open:
-            m.selected_scout_coord = coord
-            return True, lvl, is_max
+        # Dispatch single click with solid hold time to ensure Roblox input queue registers
+        inp.click_3d(coord[0] + ox, coord[1] + oy, hold=0.08, settle=0.08)
 
-    # 5. Last resort: ground base / pedestal (0, 0)
-    inp.click_3d(coord[0], coord[1], hold=0.04, settle=0.06)
-    deadline = time.time() + 0.40
-    while time.time() < deadline:
-        time.sleep(0.06)
-        is_open, lvl, is_max = _is_tower_card_open(m)
-        if is_open:
-            m.selected_scout_coord = coord
-            return True, lvl, is_max
+        # Allow Roblox UI tween (0.25-0.35s) to slide the card in, polling for up to 0.70s
+        deadline = time.time() + 0.70
+        while time.time() < deadline:
+            time.sleep(0.08)
+            is_open, lvl, is_max = _is_tower_card_open(m)
+            if is_open:
+                m.selected_scout_coord = coord
+                return True, lvl, is_max
 
     deselect_tower(m)
     return False, None, False
@@ -403,16 +413,18 @@ def _upgrade_scout_at(m: Macro, scout: dict | tuple[int, int], presses: int = 1)
 
     # Step 2: Trigger upgrade via screen button (196, 780) and keybind ('e')
     for _ in range(presses):
-        inp.click(196, 780, hold=0.04, settle=0.05)
+        m.press("e")
+        time.sleep(0.06)
+        inp.click(196, 780, hold=0.06, settle=0.06)
         m.press("e")
         time.sleep(0.10)
 
-    # Step 3: Strictly verify upgrade success by polling card & cash for up to 0.85s
+    # Step 3: Strictly verify upgrade success by polling card & cash for up to 0.90s
     upgraded = False
     confirmed_lvl = curr_lvl
     confirmed_max = False
 
-    deadline = time.time() + 0.85
+    deadline = time.time() + 0.90
     while time.time() < deadline:
         time.sleep(0.08)
         _, new_lvl, new_max = _is_tower_card_open(m)
@@ -428,7 +440,7 @@ def _upgrade_scout_at(m: Macro, scout: dict | tuple[int, int], presses: int = 1)
                 confirmed_max = True
             break
         cash_after = m.read_cash()
-        if cash_before is not None and cash_after is not None and cash_after <= cash_before - int(needed_cash * 0.75):
+        if cash_before is not None and cash_after is not None and cash_after <= cash_before - int(needed_cash * 0.70):
             upgraded = True
             confirmed_lvl = curr_lvl + presses
             if confirmed_lvl >= 4 or (cash_before - cash_after >= 1800):
@@ -452,103 +464,21 @@ def _upgrade_scout_at(m: Macro, scout: dict | tuple[int, int], presses: int = 1)
     m.log(f"Upgrade attempt at {coord} unconfirmed (remains L{scout_dict['level']}); will retry", "dim")
     return False
 
-    # Reset failure counter on successful card opening
-    scout["failed_upgrades"] = 0
-
-    # If already Level 4 MAX:
-    if is_max or (card_level is not None and card_level >= 4) or scout.get("level", 0) >= 4:
-        scout["level"] = 4
-        scout["maxed"] = True
-        deselect_tower(m)
-        m.log(f"Scout at {coord} is ALREADY MAX LEVEL!", "bold green")
-        return True
-
-    if card_level is not None:
-        scout["level"] = max(scout.get("level", 0), card_level)
-
-    # Step 2: Trigger upgrade via screen button (196, 780) and keybind ('e')
-    cash_before = m.read_cash()
-    for _ in range(presses):
-        inp.click(196, 780, hold=0.04, settle=0.05)
-        m.press("e")
-        time.sleep(0.12)
-
-    # Verification 2a: Check if card reflects new level or max
-    _, new_lvl, new_max = _is_tower_card_open(m)
-    if new_max:
-        scout["level"] = 4
-        scout["maxed"] = True
-        deselect_tower(m)
-        m.log(f"VERIFIED: Scout at {coord} REACHED LEVEL 4 MAX! (card confirmed)", "bold green")
-        return True
-    if new_lvl is not None and new_lvl > scout.get("level", 0):
-        scout["level"] = new_lvl
-        deselect_tower(m)
-        m.log(f"VERIFIED: Scout at {coord} upgraded to Level {scout['level']} (from card)", "green")
-        return True
-
-    # Polling wait for server cash replication (up to 0.8s)
-    cash_after = None
-    deadline = time.time() + 0.8
-    while time.time() < deadline:
-        time.sleep(0.10)
-        cash_after = m.read_cash()
-        if cash_before is not None and cash_after is not None and cash_after < cash_before:
-            break
-
-    # Step 3: Deselect cleanly
-    deselect_tower(m)
-
-    # Verification 2b: Did cash decrease?
-    if cash_before is not None and cash_after is not None and cash_after < cash_before:
-        delta = cash_before - cash_after
-        scout["level"] = scout.get("level", 0) + presses
-        if delta >= 1800 or scout["level"] >= 4:
-            scout["level"] = 4
-            scout["maxed"] = True
-            m.log(f"VERIFIED: Scout at {coord} REACHED LEVEL 4 MAX! (Spent ${delta}, cash remaining=${cash_after})", "bold green")
-        else:
-            m.log(f"VERIFIED: Scout at {coord} upgraded to Level {scout['level']} (Spent ${delta}, cash=${cash_after})", "green")
-        return True
-
-    # If card opened and we clicked upgrade button / pressed 'e', confirm level progression
-    if card_opened:
-        scout["level"] = scout.get("level", 0) + presses
-        if scout["level"] >= 4:
-            scout["level"] = 4
-            scout["maxed"] = True
-        m.log(f"Upgrade at {coord} dispatched on open card (new estimated L{scout['level']})", "green")
-        return True
-
-    m.log(f"Upgrade at {coord} unconfirmed (${cash_before} -> {cash_after})", "dim")
-    return False
-
 
 def collect_battlepass_drops(m: Macro) -> None:
-    """Sweep forward toward enemy portal (W) where tokens drop, then return (S) with exact matching time.
-    Uses an exact mathematically balanced net-zero displacement vector to keep camera 100% aligned."""
-    m.log("Battlepass Farm: sweeping forward toward enemy portal to collect drops", "cyan")
+    """Sweep forward along road median (W) where tokens drop, then return (S) with exact matching time.
+    Stays strictly on the center road divider to avoid any collision with shoulder towers."""
+    m.log("Battlepass Farm: longitudinal sweep along median to collect drops", "cyan")
     prev_status = getattr(m, "_custom_status", None)
     m._custom_status = "Battlepass Farm"
     m.notify_status()
     try:
-        SWEEP_TIME = 0.55
-        LATERAL_TIME = 0.20
-
-        # 1. Walk FORWARD (W) up the road median toward the portal where tokens drop
+        SWEEP_TIME = 0.35
+        # 1. Walk FORWARD (W) along the road median
         m.hold(["w"], SWEEP_TIME)
         time.sleep(0.04)
 
-        # 2. Side-to-side sweep across the road to pick up lateral drops
-        m.hold(["a"], LATERAL_TIME)
-        time.sleep(0.03)
-        m.hold(["d"], LATERAL_TIME * 2)
-        time.sleep(0.03)
-        m.hold(["a"], LATERAL_TIME)
-        time.sleep(0.04)
-
-        # 3. Walk BACK (S) down the median with exact matching duration
-        # (Net W/S = 0, Net A/D = 0 -> returns precisely to starting position)
+        # 2. Walk BACK (S) down the median with exact matching duration
         m.hold(["s"], SWEEP_TIME)
         time.sleep(0.06)
         m.log("Battlepass Farm: sweep complete; returned to anchor position", "green")
@@ -691,10 +621,10 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
 
         # Step 4: If still not clicked, use calibrated coordinates (dead center on Ready button y=255)
         if not clicked:
-            m.log(f"clicking calibrated Ready position (1380, 255) [Attempt {attempt + 1}]", "cyan")
-            inp.click(1380, 255, hold=0.08)
+            m.log(f"clicking calibrated Ready position (1300, 248) [Attempt {attempt + 1}]", "cyan")
+            inp.click(1300, 248, hold=0.08)
             time.sleep(0.10)
-            inp.click(1340, 255, hold=0.08)
+            inp.click(1310, 250, hold=0.08)
             clicked = True
 
         time.sleep(0.50)
@@ -840,9 +770,10 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 2: Early Core Placement (Place up to 5 scouts early for wide 40 DPS coverage)
-        # Having 5 Level-2 scouts by Wave 4-5 guarantees early swarm shredding
-        if len(scouts) < min(5, target_scouts) and len(scouts) < len(slots):
+        # PRIORITY 2: Early Core Placement (Place up to 3 scouts early for wide 24 DPS coverage)
+        # Having 3 Level-2 scouts by Wave 3-4 easily shreds early swarms while conserving cash
+        # to immediately rush Scout #1 to Level 3 ($950) before Lead enemies arrive!
+        if len(scouts) < min(3, target_scouts) and len(scouts) < len(slots):
             if cash is None or cash >= 250:
                 coord = _place_next_scout(m, slots, scouts, failed_slots)
                 if coord is not None:
@@ -962,10 +893,12 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                     m.sleep(0.08)
 
         # Step I: Battlepass Farm Sweep (collecting seasonal event drops)
-        # Only sweep from Wave 4 onwards and with at least 6 scouts placed so early line is secure
+        # Strictly restricted to Wave 17+ and ONLY when Scouts 1, 2, 3 are Level 4 MAX!
+        # Prevents any player collision or camera shift during critical early/mid upgrade phases.
         bp_interval = getattr(m.settings, "battlepass_interval_s", 16.0)
         current_w = m.current_wave or 1
-        if getattr(m.settings, "battlepass_farm", False) and current_w >= 4 and len(scouts) >= 6 and (now - last_bp_sweep >= bp_interval):
+        core_maxed = len(scouts) >= 3 and all(s.get("maxed", False) for s in scouts[:3])
+        if getattr(m.settings, "battlepass_farm", False) and current_w >= 17 and core_maxed and (now - last_bp_sweep >= bp_interval):
             last_bp_sweep = now
             collect_battlepass_drops(m)
 
