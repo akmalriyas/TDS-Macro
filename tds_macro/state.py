@@ -96,8 +96,24 @@ class StateDetector:
             return Detection(State.VICTORY, lines, 0.9, "triumph")
         if _has(lines, "defeat", fuzzy=0.8) and (_has(lines, "play again") or _has(lines, "return to lobby")):
             return Detection(State.DEFEAT, lines, 0.9, "defeat")
-        if _has(lines, "disconnected", fuzzy=0.8) or _has(lines, "reconnect", fuzzy=0.8):
-            return Detection(State.DISCONNECTED, lines, 0.9, "disconnected")
+        disc_terms = (
+            "disconnected",
+            "reconnect",
+            "kicked for being idle",
+            "idle 20",
+            "idle-kick",
+            "you were kicked",
+            "check your internet",
+            "connection error",
+            "lost connection",
+            "error code:",
+            "unexpected client behavior",
+        )
+        if any(_has(lines, term, fuzzy=0.75) for term in disc_terms):
+            return Detection(State.DISCONNECTED, lines, 0.95, "disconnected")
+        all_norm = " ".join(l.norm for l in lines)
+        if any(k in all_norm for k in ("disconnected", "reconnect", "kicked", "idle 20", "error code")) and any(b in all_norm for b in ("leave", "reconnect")):
+            return Detection(State.DISCONNECTED, lines, 0.95, "disconnected")
 
         # Modal panels.
         if _has(lines, "game modifiers") or _has(lines, "vote for modifiers") or _has(lines, "selected modifiers"):

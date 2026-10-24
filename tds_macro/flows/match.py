@@ -58,12 +58,10 @@ def get_top_prompt_region(frame: np.ndarray) -> tuple[int, int, int, int]:
 
 
 def get_scout_slots(frame: np.ndarray) -> list[tuple[int, int]]:
-    """Return 20 scout placement coordinates dynamically scaled to current screen resolution."""
-    h, w = frame.shape[:2]
-    if w == 2560 and h == 1440:
-        return list(SCOUT_SLOTS_2560x1440)
-    sx, sy = w / 2560.0, h / 1440.0
-    return [(int(round(x * sx)), int(round(y * sy))) for x, y in SCOUT_SLOTS_2560x1440]
+    """Return 20 scout placement coordinates in reference space.
+    Coordinates are transformed to screen pixels at runtime via viewport.to_screen_3d,
+    which scales uniformly from client viewport center across all resolutions."""
+    return list(SCOUT_SLOTS_2560x1440)
 
 
 
@@ -172,17 +170,21 @@ def setup_camera_and_position(m: Macro) -> list[tuple[int, int]]:
 
 
 def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, int]]:
-    """Select Scout ('1') and place at slot_xy.
+    """Select Scout ('1') and place at slot_xy using 3D perspective mapping.
     Verifies cash consumption, tower count increment, or unobstructed placement."""
     sx, sy = slot_xy
     search_offsets = [
         (0, 0),
-        (-25, 0),
-        (25, 0),
-        (0, -25),
-        (0, 25),
-        (-40, 0),
-        (40, 0),
+        (-20, 0),
+        (20, 0),
+        (0, -20),
+        (0, 20),
+        (-35, 0),
+        (35, 0),
+        (-20, -20),
+        (20, -20),
+        (-20, 20),
+        (20, 20),
     ]
 
     m.press("1")
@@ -191,14 +193,14 @@ def _place_scout_at(m: Macro, slot_xy: tuple[int, int]) -> Optional[tuple[int, i
 
     for ox, oy in search_offsets:
         tx, ty = sx + ox, sy + oy
-        inp.move_to(tx, ty)
+        inp.move_to(tx, ty, is_3d=True)
         time.sleep(0.06)
         frame = m.grab()
         if is_valid_placement_spot(frame, tx, ty):
             cash_before = m.read_cash(frame)
             t_before, _ = m.read_tower_count(frame)
 
-            inp.click(tx, ty)
+            inp.click_3d(tx, ty)
             time.sleep(0.20)
 
             frame_after = m.grab()
@@ -253,9 +255,16 @@ def _upgrade_scout_at(m: Macro, scout: dict, presses: int = 1) -> bool:
     # Step 1: Click the tower mesh to open its upgrade card
     card_opened = False
     is_max = False
-    for dy in (0, -15, -25, -35, 15):
-        inp.click(coord[0], coord[1] + dy, hold=0.04, settle=0.06)
-        time.sleep(0.22)  # Wait for UI tween
+    offsets = [(0, 0), (0, -20), (0, -35), (0, -10), (-15, -15), (15, -15), (0, 15)]
+    for dx, dy in offsets:
+        inp.click_3d(coord[0] + dx, coord[1] + dy, hold=0.04, settle=0.06)
+        time.sleep(0.20)  # Wait for UI tween
+        card_opened, is_max = _is_tower_card_open(m)
+        if card_opened:
+            break
+        # Fallback with standard 2D mapping in case camera was at exact 16:9
+        inp.click(coord[0] + dx, coord[1] + dy, hold=0.04, settle=0.06)
+        time.sleep(0.20)
         card_opened, is_max = _is_tower_card_open(m)
         if card_opened:
             break
@@ -481,7 +490,8 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
             m.log(f"match ended with state: [bold]{det.state.value}[/bold]", "green")
             return det.state
         if det.state == State.DISCONNECTED:
-            raise MacroError("disconnected during match")
+            m.log("match disconnected by game server", "bold yellow")
+            return State.DISCONNECTED
         if det.state == State.LOBBY:
             m.log("returned to lobby unexpectedly", "yellow")
             return State.LOBBY

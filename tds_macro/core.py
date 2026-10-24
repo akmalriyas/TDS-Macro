@@ -229,6 +229,12 @@ class Macro:
         self.touch()
         time.sleep(0.1)
 
+    def click_3d(self, x: int, y: int, hold: float = inp.CLICK_HOLD) -> None:
+        self.focus()
+        inp.click_3d(x, y, hold=hold)
+        self.touch()
+        time.sleep(0.1)
+
     # -------------------------------------------------------------- keyboard
     def press(self, key: str, times: int = 1, interval: float = 0.08) -> None:
         self.check_interrupts()
@@ -327,11 +333,11 @@ class Macro:
         Top-right leaderboard also displays cash (e.g. '$4.13K') under the player's name.
         """
         frame = self.grab() if frame is None else frame
-        # 1. Exact bottom-right HUD cash display (x=1510..1620, y=1350..1400) - exact dollar amount ($4,127)
+        # 1. Exact bottom-right HUD cash display (x=1470..1640, y=1330..1420) - exact dollar amount ($4,127)
         # Upscale 2x for flawless digit recognition (preventing '2'/'7' mistaking for '1')
         h, w = frame.shape[:2]
-        y1, y2 = max(0, 1350), min(h, 1400)
-        x1, x2 = max(0, 1510), min(w, 1620)
+        y1, y2 = max(0, 1330), min(h, 1420)
+        x1, x2 = max(0, 1470), min(w, 1640)
         crop = frame[y1:y2, x1:x2]
         if crop.size > 0:
             import cv2

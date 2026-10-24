@@ -19,9 +19,9 @@ PLAY_BUTTON_REGION = (800, 1180, 1000, 240)
 TOP_RIGHT_CLOSE = (2268, 29)
 ITEMS_REGION = (0, 500, 260, 220)
 LEFT_TAB_REGION = (300, 200, 180, 460)
-MODIFIER_GEAR = (60, 1376)
-GLASS_ICON = (1088, 440)
-BOMB_ICON = (1177, 455)
+MODIFIER_GEAR = (64, 1373)
+GLASS_ICON = (1106, 450)
+BOMB_ICON = (1218, 450)
 MODIFIER_COORDS: dict[str, tuple[int, int]] = {
     "glass": GLASS_ICON,
     "explosive": BOMB_ICON,
@@ -100,24 +100,54 @@ def dismiss_popups(m: Macro, max_rounds: int = 5) -> bool:
 
 
 def reconnect(m: Macro) -> bool:
-    """Handle the TDS idle-kick dialog, reconnecting if possible."""
-    frame = m.grab()
-    lines = m.ocr.recognize(frame)
-    m.snap("disconnected", frame)
-    rec = find_line(lines, "reconnect", fuzzy=0.75)
-    if rec is not None:
-        m.log("idle disconnect detected; reconnecting", "yellow")
-        m.click_box(rec.box)
-        time.sleep(8.0)
-        return True
-    leave = find_line(lines, "leave", fuzzy=0.75, region=(0, 500, 1600, 500))
-    if leave is not None:
-        m.log("reconnect unavailable; leaving and relaunching", "yellow")
-        m.click_box(leave.box)
-        time.sleep(3.0)
+    """Handle the TDS idle-kick dialog, reconnecting or relaunching reliably."""
+    m.log("idle disconnect / kick modal detected; recovering", "bold yellow")
+    m.focus()
+    time.sleep(0.4)
+
+    for attempt in range(3):
+        frame = m.grab()
+        lines = m.ocr.recognize(frame)
+        m.snap("disconnected", frame)
+
+        # 1. OCR search for Reconnect button across full screen
+        rec = find_line(lines, "reconnect", fuzzy=0.70)
+        if rec is not None:
+            m.log(f"reconnect button found at {rec.box.center}; clicking", "green")
+            inp.click_box(rec.box.tuple)
+            time.sleep(7.0)
+            det = m.detect()
+            if det.state != State.DISCONNECTED:
+                m.log("reconnect succeeded!", "bold green")
+                return True
+
+        # 2. OCR search for Leave button across full screen
+        leave = find_line(lines, "leave", fuzzy=0.70)
+        if leave is not None:
+            m.log(f"leave button found at {leave.box.center}; clicking to relaunch", "yellow")
+            inp.click_box(leave.box.tuple)
+            time.sleep(3.0)
+            window.open_url(GAME_URL)
+            time.sleep(10.0)
+            return True
+
+        # 3. Fallback calibrated clicks on standard Roblox disconnect dialog buttons:
+        # On standard Roblox modal, [Leave] is at ~ (1200, 810), [Reconnect] is at ~ (1360, 810)
+        m.log(f"OCR unresolved; attempting calibrated modal click on Reconnect at (1360, 810) [attempt {attempt+1}/3]", "yellow")
+        inp.click(1360, 810)
+        time.sleep(5.0)
+        if m.detect().state != State.DISCONNECTED:
+            m.log("calibrated Reconnect click succeeded!", "green")
+            return True
+
+        m.log("trying secondary modal click on [Leave] at (1200, 810) and relaunching", "yellow")
+        inp.click(1200, 810)
+        time.sleep(2.5)
         window.open_url(GAME_URL)
         time.sleep(10.0)
-        return True
+        if m.detect().state != State.DISCONNECTED:
+            return True
+
     return False
 
 
@@ -359,8 +389,11 @@ def select_survival_easy_solo(m: Macro) -> None:
 
 def open_modifiers(m: Macro) -> None:
     m.log("opening game modifiers", "bold")
-    m.click_fixed(*MODIFIER_GEAR)
-    time.sleep(1.0)
+    for dx, dy in ((0, 0), (-5, -5), (5, 5), (-10, 0)):
+        m.click_fixed(MODIFIER_GEAR[0] + dx, MODIFIER_GEAR[1] + dy)
+        time.sleep(0.4)
+        if m.detect().state == State.MODIFIERS:
+            break
     m.wait_for_state(State.MODIFIERS, timeout=8.0)
     m.snap("modifier_panel")
 
@@ -373,16 +406,44 @@ def select_modifiers(m: Macro) -> None:
 
     m.log(f"selecting modifiers: {', '.join(m.settings.modifiers)}", "bold")
     m.focus()
+
+    # Dynamic anchor to the Game Modifiers modal based on OCR title or search bar
+    frame = m.grab()
+    lines = m.ocr.recognize(frame)
+    title = find_line(lines, "modifiers", fuzzy=0.7) or find_line(lines, "came", fuzzy=0.7)
+    search_bar = find_line(lines, "search", fuzzy=0.7)
+
+    if title is not None:
+        base_x = title.box.x
+        base_y = title.box.y
+    elif search_bar is not None:
+        base_x = search_bar.box.x - 34
+        base_y = search_bar.box.y - 110
+    else:
+        base_x = 902
+        base_y = 236
+
+    # Dynamic tile centers from modal base:
+    # Row 0:
+    # Col 1 (Glass): base_x + 204, base_y + 214
+    # Col 2 (Bomb / Exploding Enemies): base_x + 316, base_y + 214
+    dynamic_coords = {
+        "glass": (base_x + 204, base_y + 214),
+        "explosive": (base_x + 316, base_y + 214),
+        "exploding enemies": (base_x + 316, base_y + 214),
+        "bomb": (base_x + 316, base_y + 214),
+    }
+
     clicked = 0
     for mod_name in targets:
-        coord = MODIFIER_COORDS.get(mod_name)
+        coord = dynamic_coords.get(mod_name) or MODIFIER_COORDS.get(mod_name)
         if not coord:
-            for k, c in MODIFIER_COORDS.items():
+            for k, c in dynamic_coords.items():
                 if k in mod_name or mod_name in k:
                     coord = c
                     break
         if coord:
-            m.log(f"clicking modifier '{mod_name}' at {coord}", "cyan")
+            m.log(f"clicking modifier '{mod_name}' at {coord} (modal base: {base_x}, {base_y})", "cyan")
             inp.click(*coord, hold=0.05, settle=0.20)
             time.sleep(0.35)
             m.focus()
@@ -394,7 +455,7 @@ def select_modifiers(m: Macro) -> None:
         time.sleep(0.5)
         m.snap("modifier_selected")
         # Verify the panel shows selected count; OCR may read "2/13" or "2 / 13".
-        lines = m.ocr.recognize(m.grab(), (850, 1000, 850, 260))
+        lines = m.ocr.recognize(m.grab(), (base_x, base_y + 650, 700, 300))
         text = " ".join(l.norm for l in lines)
         m.log(f"selected modifiers text: {text}", "dim")
 
@@ -402,16 +463,24 @@ def select_modifiers(m: Macro) -> None:
 def vote_modifiers(m: Macro) -> None:
     m.log("voting for modifiers", "bold")
     frame = m.grab()
-    boxes = vision.find_green_buttons(frame, VOTE_MODIFIERS_REGION, min_area=1200)
-    if not boxes:
-        # Also check mid-screen region (refs/221445.png has Vote For Modifiers around y=922)
-        boxes = vision.find_green_buttons(frame, (1050, 820, 750, 480), min_area=1200)
-    if boxes:
-        box = boxes[0]
-        m.log(f"clicking Vote For Modifiers at {box.center}", "cyan")
-        inp.click_box(box.tuple)
-    elif not m.click_text("vote for modifiers", region=(1000, 800, 900, 520), timeout=4.0):
-        raise MacroError("Vote For Modifiers button not found")
+    lines = m.ocr.recognize(frame)
+
+    # 1. Direct OCR search for Vote For Modifiers button across full screen
+    vote_line = find_line(lines, "vote for modifiers", fuzzy=0.75) or find_line(lines, "vote", fuzzy=0.75)
+    if vote_line is not None and vote_line.box.y > 600:
+        m.log(f"found Vote button via OCR at {vote_line.box.center}", "green")
+        inp.click_box(vote_line.box.tuple)
+    else:
+        # 2. Vision green button in modal button area
+        boxes = vision.find_green_buttons(frame, (800, 950, 950, 350), min_area=800)
+        if boxes:
+            box = boxes[0]
+            m.log(f"clicking Vote For Modifiers green button at {box.center}", "cyan")
+            inp.click_box(box.tuple)
+        else:
+            m.log("Vote button text/color not found; clicking calibrated position (1506, 1222)", "yellow")
+            inp.click(1506, 1222)
+
     time.sleep(1.0)
     # Ensure the modifier menu is closed before walking to the override machine.
     det = m.detect()
@@ -598,9 +667,16 @@ def override_dead_ahead(m: Macro) -> None:
     m.wait_for_state(State.OVERRIDE, timeout=6.0)
     m.snap("override_grid")
 
-    # 1. Use the "Search for Maps" input bar at (1100, 290) to filter directly to Dead Ahead
-    m.log("clicking Search for Maps bar at (1100, 290)", "cyan")
-    m.click_fixed(1100, 290)
+    # 1. Use the "Search for Maps" input bar
+    frame = m.grab()
+    lines = m.ocr.recognize(frame)
+    search_bar = find_line(lines, "search for maps", fuzzy=0.70) or find_line(lines, "search", fuzzy=0.70)
+    if search_bar is not None:
+        m.log(f"clicking Search for Maps bar at {search_bar.box.center}", "cyan")
+        m.click_box(search_bar.box)
+    else:
+        m.log("Search for Maps bar not resolved by OCR; clicking fallback (1100, 290)", "yellow")
+        m.click_fixed(1100, 290)
     time.sleep(0.3)
     inp.type_text("dead ahead", interval=0.04)
     time.sleep(0.7)
@@ -608,21 +684,30 @@ def override_dead_ahead(m: Macro) -> None:
     frame = m.grab()
     m.snap("override_search", frame)
 
-    # 2. Click the Dead Ahead tile at Row 1 Col 1 (1070, 395)
-    tpl = vision.load_template("dead_ahead_tile.png")
+    # 2. Click the Dead Ahead tile at Row 1 Col 1
+    # Check OCR first for 'dead ahead' or 'ahead' in the grid area
+    grid_lines = m.ocr.recognize(frame, (900, 320, 750, 500))
+    dead_line = find_line(grid_lines, "dead ahead", fuzzy=0.70) or find_line(grid_lines, "ahead", fuzzy=0.70)
     clicked_tile = False
-    if tpl is not None:
-        box = vision.match_template_best(
-            frame,
-            tpl,
-            threshold=0.62,
-            region=(995, 330, 565, 740),
-            scales=(0.95, 1.0, 1.05),
-        )
-        if box is not None:
-            m.log(f"matched Dead Ahead tile template at {box.center}", "green")
-            m.click_box(box)
-            clicked_tile = True
+    if dead_line is not None:
+        m.log(f"found Dead Ahead tile text via OCR at {dead_line.box.center}", "green")
+        m.click_box(dead_line.box)
+        clicked_tile = True
+
+    if not clicked_tile:
+        tpl = vision.load_template("dead_ahead_tile.png")
+        if tpl is not None:
+            box = vision.match_template_best(
+                frame,
+                tpl,
+                threshold=0.62,
+                region=(900, 320, 750, 600),
+                scales=(0.85, 0.95, 1.0, 1.05, 1.15),
+            )
+            if box is not None:
+                m.log(f"matched Dead Ahead tile template at {box.center}", "green")
+                m.click_box(box)
+                clicked_tile = True
 
     if not clicked_tile:
         m.log("clicking Dead Ahead tile at Row 1 Col 1 (1070, 395)", "cyan")
@@ -648,6 +733,9 @@ def override_dead_ahead(m: Macro) -> None:
         time.sleep(0.5)
         if m.detect().state == State.OVERRIDE:
             m.click_fixed(600, 700)
+            time.sleep(0.5)
+        if m.detect().state == State.OVERRIDE:
+            inp.press("escape")
             time.sleep(0.5)
 
     # Ensure Roblox ESC menu is not open
@@ -737,9 +825,18 @@ def walk_from_override_to_map_selector(m: Macro) -> None:
 
     # Cast the vote on Board 1 by holding E
     m.log("casting vote on Board 1 Dead Ahead pad (holding E)", "bold green")
-    m.hold(["e"], 1.3)
+    m.hold(["e"], 1.4)
     time.sleep(0.4)
     m.snap("dead_ahead_voted")
+
+    # Verify if vote registered; if countdown has not started, nudge forward and hold E again
+    frame = m.grab()
+    if not is_vote_timer_running(m, frame):
+        m.log("vote timer not yet active; nudging forward onto pad and retrying vote", "yellow")
+        m.hold(["w"], 0.45)
+        time.sleep(0.2)
+        m.hold(["e"], 1.5)
+        time.sleep(0.4)
 
 
 def get_ready_region(frame: np.ndarray) -> tuple[int, int, int, int]:

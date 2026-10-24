@@ -98,15 +98,16 @@ def cursor_pos() -> tuple[int, int]:
     return p.x, p.y
 
 
-def move_to(x: int | float, y: int | float, jiggle: int = CLICK_JIGGLE, raw: bool = False) -> None:
+def move_to(x: int | float, y: int | float, jiggle: int = CLICK_JIGGLE, raw: bool = False, is_3d: bool = False) -> None:
     """Move the OS cursor to a physical pixel position and wake Roblox's cursor.
 
     Unless raw=True, (x, y) is treated as a reference coordinate (2560x1440 space)
-    and translated to physical client screen pixels via viewport.to_screen.
+    and translated to physical client screen pixels via viewport.to_screen (or to_screen_3d
+    for in-world objects / placements).
     """
     if not raw:
         from . import viewport
-        x, y = viewport.to_screen(x, y)
+        x, y = viewport.to_screen_3d(x, y) if is_3d else viewport.to_screen(x, y)
     x, y = int(round(x)), int(round(y))
     user32.SetCursorPos(x, y)
     time.sleep(0.05)
@@ -130,6 +131,15 @@ def mouse_up(button: str = "left") -> None:
 
 def click(x: int, y: int, hold: float = CLICK_HOLD, button: str = "left", settle: float = CLICK_SETTLE) -> None:
     move_to(x, y)
+    time.sleep(0.06)
+    mouse_down(button)
+    time.sleep(hold)
+    mouse_up(button)
+    time.sleep(settle)
+
+
+def click_3d(x: int, y: int, hold: float = CLICK_HOLD, button: str = "left", settle: float = CLICK_SETTLE) -> None:
+    move_to(x, y, is_3d=True)
     time.sleep(0.06)
     mouse_down(button)
     time.sleep(hold)

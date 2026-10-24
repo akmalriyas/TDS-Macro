@@ -87,6 +87,12 @@ def run_forever(m: Macro, log: RunLog, settings: Optional[RunSettings] = None) -
             m.check_interrupts()
             state = lobby.ensure_game(m)
 
+            if state == State.DISCONNECTED:
+                m.log("Roblox client disconnected; executing reconnect recovery", "bold yellow")
+                lobby.reconnect(m)
+                m.sleep(4.0)
+                continue
+
             # 1. If in LOBBY / PLAY_MENU / SQUAD_SELECT, record currencies, check Golden Scout ONCE, and queue Solo
             if state in (State.LOBBY, State.PLAY_MENU, State.SQUAD_SELECT):
                 if state == State.LOBBY:
@@ -102,9 +108,15 @@ def run_forever(m: Macro, log: RunLog, settings: Optional[RunSettings] = None) -
 
                 lobby.select_survival_easy_solo(m)
                 state = m.wait_for_state(
-                    [State.INTERMISSION, State.GAMEPLAY_PREP, State.GAMEPLAY],
+                    [State.INTERMISSION, State.GAMEPLAY_PREP, State.GAMEPLAY, State.DISCONNECTED],
                     timeout=90.0,
                 ).state
+
+            if state == State.DISCONNECTED:
+                m.log("matchmaking disconnected; executing reconnect recovery", "bold yellow")
+                lobby.reconnect(m)
+                m.sleep(4.0)
+                continue
 
             # 2. If in INTERMISSION / MODIFIERS / OVERRIDE, configure modifiers + override Dead Ahead + select map + Ready
             if state in (State.INTERMISSION, State.MODIFIERS, State.OVERRIDE):
@@ -113,13 +125,25 @@ def run_forever(m: Macro, log: RunLog, settings: Optional[RunSettings] = None) -
                     time.sleep(0.6)
                 lobby.run_intermission(m)
                 state = m.wait_for_state(
-                    [State.GAMEPLAY_PREP, State.GAMEPLAY, State.VICTORY, State.DEFEAT],
+                    [State.GAMEPLAY_PREP, State.GAMEPLAY, State.VICTORY, State.DEFEAT, State.DISCONNECTED],
                     timeout=90.0,
                 ).state
+
+            if state == State.DISCONNECTED:
+                m.log("intermission disconnected; executing reconnect recovery", "bold yellow")
+                lobby.reconnect(m)
+                m.sleep(4.0)
+                continue
 
             # 3. In-Match Gameplay (Dead Ahead Golden Scout strategy)
             if state in (State.GAMEPLAY_PREP, State.GAMEPLAY):
                 state = match.run_match(m, record=rec)
+
+            if state == State.DISCONNECTED:
+                m.log("match disconnected; executing reconnect recovery", "bold yellow")
+                lobby.reconnect(m)
+                m.sleep(4.0)
+                continue
 
             # 4. Victory / Defeat Screen -> OCR Stats, Log Run, and Click Play Again
             if state in (State.VICTORY, State.DEFEAT):

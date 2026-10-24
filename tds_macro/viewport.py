@@ -120,6 +120,24 @@ def to_screen(x: float, y: float) -> tuple[int, int]:
     )
 
 
+def to_screen_3d(x: float, y: float) -> tuple[int, int]:
+    """Map a reference (2560x1440) 3D coordinate to physical client screen pixels.
+
+    In Roblox, the camera uses a fixed vertical FOV (70 deg). 3D world projections
+    maintain aspect ratio and scale uniformly by client height relative to REF_H (1440),
+    originating from the center of the client viewport. This guarantees that 3D placements
+    and tower clicks remain pixel-perfect across 1080p, 1440p, 4K, and windowed modes.
+    """
+    vp = current()
+    scale = vp.height / float(REF_H)
+    cx = vp.left + vp.width / 2.0
+    cy = vp.top + vp.height / 2.0
+    return (
+        int(round(cx + (x - (REF_W / 2.0)) * scale)),
+        int(round(cy + (y - (REF_H / 2.0)) * scale)),
+    )
+
+
 def scale_delta(dx: float, dy: float) -> tuple[int, int]:
     """Scale a reference-space distance (UI drags) to physical pixels."""
     vp = current()
