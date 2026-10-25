@@ -414,9 +414,9 @@ def _upgrade_scout_at(m: Macro, scout: dict | tuple[int, int], presses: int = 1)
     level_costs = {0: 100, 1: 250, 2: 950, 3: 2550}
     needed_cash = level_costs.get(curr_lvl, 250)
 
-    # Check cash before attempting: if cash is known and insufficient, abort cleanly
+    # Check cash before attempting: if cash is known and far below requirement, abort cleanly
     cash_before = m.read_cash()
-    if cash_before is not None and cash_before < needed_cash:
+    if cash_before is not None and cash_before < int(needed_cash * 0.70):
         m.log(f"Scout at {coord} needs ${needed_cash} (currently L{curr_lvl}), but have ${cash_before}; waiting", "dim")
         deselect_tower(m)
         return False
@@ -588,11 +588,29 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
     if scout_1_coord is None:
         m.log("Failed initial placement; re-anchoring camera against street light", "yellow")
         setup_camera_and_position(m)
-        scout_1_coord = _place_next_scout(m, slots, [], failed_slots) or slots[0]
+        scout_1_coord = _place_next_scout(m, slots, [], failed_slots)
+
+    if scout_1_coord is None:
+        m.press("1")
+        time.sleep(0.3)
+        scout_1_coord = _place_next_scout(m, slots, [], failed_slots)
+
+    # STRICT FAILSAFE: Never start Wave 1 with 0 scouts!
+    if scout_1_coord is None:
+        m.log("CRITICAL: Scout #1 could NOT be placed! Aborting match before Wave 1 to prevent 0-tower defeat", "bold red")
+        inp.press("escape")
+        time.sleep(0.4)
+        inp.press("l")
+        time.sleep(0.4)
+        inp.press("enter")
+        time.sleep(4.0)
+        if record is not None:
+            record.result = "aborted_placement_fail"
+        return State.LOBBY
 
     scouts: list[dict] = [{"coord": scout_1_coord, "level": 0, "maxed": False}]
-    _upgrade_scout_at(m, scouts[0], presses=1)  # Level 1 ($100)
-    scouts[0]["level"] = 1
+    if _upgrade_scout_at(m, scouts[0], presses=1):
+        scouts[0]["level"] = 1
     m.scouts_placed = 1
     m.notify_status()
 
@@ -839,19 +857,23 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 6: Mid-Game Army Expansion (Place up to 8 scouts)
-        if len(scouts) < min(8, target_scouts) and len(scouts) < len(slots):
-            if cash is None or cash >= 250:
-                coord = _place_next_scout(m, slots, scouts, failed_slots)
-                if coord is not None:
-                    scouts.append({"coord": coord, "level": 0, "maxed": False})
-                    m.scouts_placed = len(scouts)
-                    m.log(f"placed mid-game Scout #{len(scouts)}/8 at {coord}", "green")
+        # Check if Core Triad (Scouts 1, 2, 3) are MAXED
+        triad_maxed = len(scouts) >= 3 and all(s.get("maxed", False) for s in scouts[:3])
+
+        # PRIORITY 6: Sequential Army Expansion - only AFTER Core Triad is MAXED!
+        # Upgrade any existing unmaxed scout before placing another one!
+        unmaxed_scouts = [s for s in scouts if can_upgrade(s) and not s.get("maxed", False)]
+        if triad_maxed and unmaxed_scouts:
+            target = unmaxed_scouts[0]
+            lvl = target.get("level", 0)
+            cost = 950 if lvl == 2 else (2550 if lvl == 3 else (100 if lvl == 0 else 250))
+            if cash is None or cash >= cost:
+                if _upgrade_scout_at(m, target):
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 7: Full Army Expansion (Place Scouts up to target_scouts)
-        if len(scouts) < target_scouts and len(scouts) < len(slots):
+        # PRIORITY 7: Place next Scout in Army (up to target_scouts) - only when all placed scouts are maxed!
+        if triad_maxed and len(scouts) < target_scouts and len(scouts) < len(slots) and not unmaxed_scouts:
             if cash is None or cash >= 250:
                 coord = _place_next_scout(m, slots, scouts, failed_slots)
                 if coord is not None:
@@ -861,53 +883,19 @@ def run_match(m: Macro, record: Optional[RunRecord] = None) -> State:
                     m.sleep(0.06)
                     continue
 
-        # PRIORITY 8: Mass Upgrade - Any remaining Level 3 scouts to Level 4 MAX ($2,550)
-        under_l4 = [s for s in scouts if can_upgrade(s) and s.get("level", 0) == 3]
-        if under_l4 and (cash is None or cash >= 2550):
-            target = under_l4[0]
-            if _upgrade_scout_at(m, target):
-                m.sleep(0.06)
-                continue
-
-        # PRIORITY 9: Mass Upgrade - Any remaining Level 2 scouts to Level 3 ($950)
-        under_l3 = [s for s in scouts if can_upgrade(s) and s.get("level", 0) == 2]
-        if under_l3 and (cash is None or cash >= 950):
-            target = under_l3[0]
-            if _upgrade_scout_at(m, target):
-                m.sleep(0.06)
-                continue
-
-        # PRIORITY 10: Surplus Cash Sink - if cash >= $1,000, upgrade any unmaxed scout
-        any_unmaxed = [s for s in scouts if can_upgrade(s)]
-        if any_unmaxed and cash is not None and cash >= 1000:
-            target = any_unmaxed[0]
-            if _upgrade_scout_at(m, target):
-                m.sleep(0.06)
-                continue
-
-        # PRIORITY 11: Surplus Placement - if all existing scouts are maxed and slots remain
-        if len(scouts) < target_scouts and len(scouts) < len(slots) and (cash is None or cash >= 250):
-            coord = _place_next_scout(m, slots, scouts, failed_slots)
-            if coord is not None:
-                scouts.append({"coord": coord, "level": 0, "maxed": False})
-                m.scouts_placed = len(scouts)
-                m.log(f"surplus placement: Scout #{len(scouts)}/{len(slots)} at {coord}", "green")
-                m.sleep(0.06)
-                continue
-
         # Step H: Single-target Max Assurance (non-blocking)
-        if now - last_sweep_time > 10.0 and (cash is None or cash >= 950):
+        if now - last_sweep_time > 8.0 and (cash is None or cash >= 950):
             last_sweep_time = now
             under_max = [s for s in scouts if can_upgrade(s) and not s.get("maxed", False)]
             if under_max:
                 _upgrade_scout_at(m, under_max[0], presses=1)
 
         # Step I: Battlepass Farm Sweep (collecting seasonal event drops)
-        # Active from Wave 7+ whenever primary defense is placed, sweeping every 22s
-        bp_interval = getattr(m.settings, "battlepass_interval_s", 22.0)
+        # Active from Wave 4+ whenever core defense is placed, sweeping every 15s
+        bp_interval = getattr(m.settings, "battlepass_interval_s", 15.0)
         current_w = m.current_wave or 1
         has_defense = len(scouts) >= 3 and any(s.get("level", 0) >= 2 for s in scouts)
-        if getattr(m.settings, "battlepass_farm", False) and current_w >= 7 and has_defense and (now - last_bp_sweep >= bp_interval):
+        if getattr(m.settings, "battlepass_farm", True) and current_w >= 4 and has_defense and (now - last_bp_sweep >= bp_interval):
             last_bp_sweep = now
             collect_battlepass_drops(m)
 
@@ -1011,25 +999,43 @@ def parse_results_and_continue(m: Macro, record: Optional[RunRecord] = None) -> 
     # ALWAYS return to lobby to ensure a clean override to Dead Ahead on the next run.
     if outcome == "victory" and m.settings.use_play_again:
         m.log("clicking Play Again to start next run", "bold")
-        if not m.click_text("play again", region=(1000, 850, 1100, 520), timeout=5.0, fuzzy=0.75):
+        if not m.click_text("play again", region=(1000, 850, 1100, 520), timeout=3.0, fuzzy=0.75):
             if not m.click_green((1250, 920, 750, 440), min_area=1000):
                 m.click_fixed(1600, 1290)
     else:
         m.log("clicking Return To Lobby to guarantee Dead Ahead map override", "bold")
-        # In TDS v2.16, Return To Lobby button is at (1095, 1105) for both Victory and Defeat
-        rtl = find_line(lines, "return to lobby", fuzzy=0.75)
+        rtl = find_line(lines, "return to lobby", fuzzy=0.75) or find_line(lines, "lobby", fuzzy=0.75)
         btn_xy = rtl.box.center if rtl is not None else (1095, 1105)
         m.click_fixed(*btn_xy)
-        time.sleep(1.0)
-        for _ in range(4):
-            post_det = m.detect()
-            if post_det.state not in (State.VICTORY, State.DEFEAT):
-                break
-            m.log(f"still on {post_det.state.value} screen; retrying Return To Lobby click", "yellow")
-            m.click_fixed(*btn_xy)
-            time.sleep(1.2)
 
-    time.sleep(2.0)
+    # Post-click transition verification: poll until the results screen is dismissed
+    t_wait = time.time()
+    dismissed = False
+    while time.time() - t_wait < 14.0:
+        time.sleep(1.0)
+        post_det = m.detect()
+        if post_det.state not in (State.VICTORY, State.DEFEAT):
+            dismissed = True
+            break
+        # Still on results screen; retry dismiss
+        if outcome == "victory" and m.settings.use_play_again:
+            m.log("still on results screen; retrying Play Again click", "yellow")
+            if not m.click_green((1250, 920, 750, 440), min_area=1000):
+                m.click_fixed(1600, 1290)
+        else:
+            m.log("still on results screen; retrying Return To Lobby click", "yellow")
+            m.click_fixed(1095, 1105)
+
+    if not dismissed:
+        m.log("results screen did not dismiss via button; forcing return to lobby via Roblox menu (Esc+L+Enter)", "bold yellow")
+        inp.press("escape")
+        time.sleep(0.4)
+        inp.press("l")
+        time.sleep(0.4)
+        inp.press("enter")
+        time.sleep(3.0)
+
+    time.sleep(1.0)
     return {
         "outcome": outcome,
         "coins_earned": coins_earned,

@@ -179,8 +179,20 @@ def run_forever(m: Macro, log: RunLog, settings: Optional[RunSettings] = None) -
                     except Exception as e:
                         m.log(f"webhook notice error: {e}", "dim")
 
-                # After clicking Play Again, wait briefly for next Intermission or Lobby load
-                m.sleep(3.0)
+                # After match result handling, explicitly wait for transition into Lobby or Intermission
+                try:
+                    m.wait_for_state(
+                        [State.LOBBY, State.INTERMISSION, State.GAMEPLAY_PREP, State.DISCONNECTED],
+                        timeout=35.0,
+                    )
+                except Exception:
+                    m.log("post-match transition timeout; forcing lobby reset via menu", "yellow")
+                    inp.press("escape")
+                    time.sleep(0.4)
+                    inp.press("l")
+                    time.sleep(0.4)
+                    inp.press("enter")
+                    time.sleep(3.0)
                 continue
 
             if state == State.LOBBY:

@@ -181,7 +181,16 @@ def ensure_game(m: Macro, timeout: float = 150.0) -> State:
             if dismiss_popups(m):
                 continue
             return det.state
-        if det.state in (State.INTERMISSION, State.GAMEPLAY, State.GAMEPLAY_PREP, State.VICTORY, State.DEFEAT):
+        if det.state in (State.VICTORY, State.DEFEAT):
+            m.log(f"game currently on residual {det.state.value} screen; returning to lobby", "yellow")
+            inp.press("escape")
+            time.sleep(0.4)
+            inp.press("l")
+            time.sleep(0.4)
+            inp.press("enter")
+            time.sleep(3.0)
+            continue
+        if det.state in (State.INTERMISSION, State.GAMEPLAY, State.GAMEPLAY_PREP):
             return det.state
         if det.state == State.UNKNOWN and unknown_streak >= 3 and unknown_streak % 3 == 0:
             # An unrecognised panel (inventory, shop, ...) is covering the lobby: close it.
@@ -438,11 +447,17 @@ def select_modifiers(m: Macro) -> None:
 
     def _get_selected_count() -> int:
         vf = m.grab()
-        vlines = m.ocr.recognize(vf, (base_x, base_y + 550, 750, 420))
+        vlines = m.ocr.recognize(vf, (max(0, base_x - 100), base_y + 400, 950, 600))
         vtext = " ".join(l.norm for l in vlines)
         match = re.search(r"(\d+)\s*/\s*13", vtext)
         if match:
             return int(match.group(1))
+        # Fallback to full screen OCR if modal bounds shifted
+        full_lines = m.ocr.recognize(vf)
+        full_text = " ".join(l.norm for l in full_lines)
+        match2 = re.search(r"(\d+)\s*/\s*13", full_text)
+        if match2:
+            return int(match2.group(1))
         return -1
 
     # 1. First check if modifiers are ALREADY selected
@@ -452,32 +467,22 @@ def select_modifiers(m: Macro) -> None:
         m.snap("modifier_selected")
         return
 
-    # 2. If 0 selected, click Tile 1 (Glass)
-    if cur_count == 0:
+    # 2. Select Tile 1 (Glass)
+    if cur_count in (0, -1):
         m.log(f"clicking Glass modifier tile at {tile1_xy}", "cyan")
         inp.click(tile1_xy[0], tile1_xy[1], hold=0.08, settle=0.35)
-        time.sleep(0.35)
+        time.sleep(0.40)
         cur_count = _get_selected_count()
-        if cur_count == 0:
-            m.log(f"re-clicking Glass tile at {tile1_xy}", "yellow")
-            inp.click(tile1_xy[0], tile1_xy[1], hold=0.08, settle=0.35)
-            time.sleep(0.35)
-            cur_count = _get_selected_count()
 
-    # 3. If 1 selected, click Tile 2 (Exploding Enemies)
-    if cur_count == 1:
+    # 3. Select Tile 2 (Exploding Enemies)
+    if cur_count == 1 or (cur_count == -1 and target_count >= 2):
         m.log(f"clicking Exploding Enemies modifier tile at {tile2_xy}", "cyan")
         inp.click(tile2_xy[0], tile2_xy[1], hold=0.08, settle=0.35)
-        time.sleep(0.35)
+        time.sleep(0.40)
         cur_count = _get_selected_count()
-        if cur_count == 1:
-            m.log(f"re-clicking Exploding Enemies tile at {tile2_xy}", "yellow")
-            inp.click(tile2_xy[0], tile2_xy[1], hold=0.08, settle=0.35)
-            time.sleep(0.35)
-            cur_count = _get_selected_count()
 
-    if cur_count == target_count:
-        m.log(f"SUCCESS: All {target_count} modifiers selected ({target_count}/13)!", "bold green")
+    if cur_count >= target_count:
+        m.log(f"SUCCESS: All {target_count} modifiers selected ({cur_count}/13)!", "bold green")
     else:
         m.log(f"Modifiers state: {cur_count}/13 registered", "yellow")
     m.snap("modifier_selected")
