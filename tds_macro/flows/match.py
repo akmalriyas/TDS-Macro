@@ -406,9 +406,9 @@ def _upgrade_scout_at(m: Macro, scout: dict | tuple[int, int], presses: int = 1)
         m.log(f"Scout at {coord} is ALREADY MAX LEVEL!", "bold green")
         return True
 
-    # Calibrate scout level from card if higher
+    # Calibrate scout level directly from open card (ground truth)
     if card_level is not None:
-        scout_dict["level"] = max(scout_dict.get("level", 0), card_level)
+        scout_dict["level"] = card_level
 
     curr_lvl = scout_dict.get("level", 0)
     level_costs = {0: 100, 1: 250, 2: 950, 3: 2550}
